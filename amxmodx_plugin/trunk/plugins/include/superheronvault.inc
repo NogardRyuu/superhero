@@ -1,15 +1,15 @@
 // SuperHero nVault Include File
-// Version 1.18e
+// Version 1.2.0
 
 //----------------------------------------------------------------------------------------------
 // Abstract Methods that must be implemented by a save superhero include file...
 //
-// writeMemoryTable()
-// loadXP( id, key[35] )
+// memoryTableWrite()
+// loadXP(id, const savekey[32])
 // cleanXP(clearAll = false)
 //----------------------------------------------------------------------------------------------
 
-#if defined _shsave_included || !defined SHCORE || !defined AMXX_VERSION
+#if defined _shsave_included || !defined SHCORE
 	#endinput
 #endif
 #define _shsave_included
@@ -17,123 +17,131 @@
 //Include the nvault file
 #include <nvault>
 
-//Name for binary vault file
-#define VAULTNAME "superhero"
-
 //Global to save the vault handle
 new gVaultHandle
 
 //----------------------------------------------------------------------------------------------
-public saving_init()
+saving_init()
 {
-	gVaultHandle = nvault_open(VAULTNAME)
-	if (gVaultHandle == INVALID_HANDLE) {
-		format(debugt,255,"Error opening nVault file: %s",VAULTNAME)
-		debugMessage(debugt,0,0)
+	gVaultHandle = nvault_open("superhero")
+
+	if ( gVaultHandle == INVALID_HANDLE ) {
+		debugMsg(0, 0, "Error opening nVault file: superhero.vault")
 	}
 }
 //----------------------------------------------------------------------------------------------
-public parseXP(id, const data[] )
+public memoryTableWrite()
 {
-	// "name" XP USERFLAGS "SKILL1" "SKILL2" ...
-	new heroIndex
-	new Left[32], Right[1501]
+	if ( !get_pcvar_num(sh_savexp) ) return
 
-	copy(Right, 1500, data)
-
-	//Get the name out
-	strbrkqt(Right, Left, 31, Right, 1500)
-
-	//Get the XP out and save it
-	strbrkqt(Right, Left, 31, Right, 1500)
-	gPlayerXP[id] = str_to_num(Left)
-	gPlayerLevel[id] = getLevel(id)
-	setLevel(id, gPlayerLevel[id] )
-
-	//Get the User Flags out and save them
-	strbrkqt(Right, Left, 31, Right, 1500)
-	gPlayerFlags[id] = str_to_num(Left)
-
-	//Now load in all the skills
-	new powerCount = 0
-	new MaxPowers = min(get_cvar_num("sh_maxpowers"), SH_MAXLEVELS)
-
-	while ( strlen(Right) > 0 && powerCount < MaxPowers ) {
-		strbrkqt(Right, Left, 31, Right, 1500)
-		heroIndex = findHero(Left)
-		if ( heroIndex >= 0 )  {
-			if ( getHeroLevel(heroIndex) <= gPlayerLevel[id] ) {
-				gPlayerPowers[id][0] = ++powerCount
-				gPlayerPowers[id][powerCount] = heroIndex
-				initHero(id, heroIndex)
-			}
-		}
-	}
-}
-//----------------------------------------------------------------------------------------------
-public writeMemoryTable()
-{
-	if ( !get_cvar_num("sh_savexp") ) return
-
-	debugMessage("Writing XP Data to Vault file",0,3)
+	debugMsg(0, 3, "Writing XP Data to nVault file")
 
 	// Write Memory Table to File
-	for (new x = 1; x < gMemoryTableCount; x++) {
-		if ( strlen(gMemoryTableKeys[x]) > 0 ) {
+	for ( new x = 1; x < gMemoryTableCount; x++ ) {
+		if ( gMemoryTableKeys[x][0] != '^0' ) {
 			writeData(x)
 		}
 		// Can even clear the MemoryKey - if a player is disconnected no reason to save again and again...
-		copy(gMemoryTableKeys[x], 34, "")
+		gMemoryTableKeys[x][0] = '^0'
 	}
 
 	// No need to keep disconnected players around if this has been flushed...
 	gMemoryTableCount = 33
 }
 //----------------------------------------------------------------------------------------------
-public writeData(id)
+writeData(id)
 {
 	// Formats Player Information and writes to file:
 	// "name" XP USERFLAGS "SKILL1" "SKILL2" ...
-	new data[1501], heroIndex
+	static data[1501]
+	new heroIndex, len
+	new powerCount = gMemoryTablePowers[id][0]
+	new maxlen = 1500
 
-	format(data, 1500, "^"%s^" %d %d", gMemoryTableNames[id], gMemoryTableXP[id], gMemoryTableFlags[id] )
-	for ( new x = 1; x <= gMemoryTablePowers[id][0] && x < gSuperHeroCount; x++ ) {
+	data[0] = '^0'
+
+	len += formatex(data[len], maxlen-len, "^"%s^" %d %d", gMemoryTableNames[id], gMemoryTableXP[id], gMemoryTableFlags[id])
+
+	for ( new x = 1; x <= powerCount && x <= gSuperHeroCount && len < 1500; x++ ) {
 		heroIndex = gMemoryTablePowers[id][x]
-		if ( heroIndex >= 0 && heroIndex < gSuperHeroCount ) {
-			add(data, 1500, " ^"")
-			add(data, 1500, gSuperHeros[heroIndex][hero])
-			add(data, 1500, "^"")
+		if ( -1 < heroIndex < gSuperHeroCount ) {
+			len += formatex(data[len], maxlen-len, " ^"%s^"", gSuperHeros[heroIndex][hero])
 		}
 	}
 
 	nvault_set(gVaultHandle, gMemoryTableKeys[id], data)
 
-	if (id > 0 && id <= SH_MAXSLOTS) {
+	if ( 0 < id <= SH_MAXSLOTS ) {
 		gChangedHeroes[id] = false
 	}
 }
 //----------------------------------------------------------------------------------------------
-public loadXP( id, key[35] )
+loadXP(id, const savekey[32])
 {
-	new data[1501], timestamp
+	static Right[1501], temp
+	Right[0] = '^0'
 
-	if (nvault_lookup(gVaultHandle, key, data, 1500, timestamp)) {
-		parseXP(id, data)
+	if ( nvault_lookup(gVaultHandle, savekey, Right, 1500, temp) ) {
+		// parseXP
+
+		// "name" XP USERFLAGS "SKILL1" "SKILL2" ...
+		new heroIndex, powerCount, maxPowers, playerLevel
+		static Left[32]
+		Left[0] = '^0'
+
+		// Get the name out
+		strbrkqt(Right, Left, 31, Right, 1500)
+		Left[0] = '^0'
+
+		// Get the XP out and save it
+		strbrkqt(Right, Left, 31, Right, 1500)
+		gPlayerXP[id] = str_to_num(Left)
+		gPlayerLevel[id] = playerLevel = getPlayerLevel(id)
+		setLevel(id, playerLevel)
+		Left[0] = '^0'
+
+		// Get the User Flags out and save them
+		strbrkqt(Right, Left, 31, Right, 1500)
+		gPlayerFlags[id] = str_to_num(Left)
+
+		// Now load in all the skills
+		powerCount = 0
+		maxPowers = min(get_pcvar_num(sh_maxpowers), SH_MAXLEVELS)
+
+		while ( Right[0] != '^0' && powerCount < maxPowers ) {
+			Left[0] = '^0'
+			strbrkqt(Right, Left, 31, Right, 1500)
+			heroIndex = getHeroID(Left)
+			if ( -1 < heroIndex < gSuperHeroCount ) {
+				if ( getHeroLevel(heroIndex) <= playerLevel ) {
+					gPlayerPowers[id][0] = ++powerCount
+					gPlayerPowers[id][powerCount] = heroIndex
+					initHero(id, heroIndex, SH_HERO_ADD)
+				}
+			}
+		}
 	}
 
-	updateMemoryTable(id)
+	memoryTableUpdate(id)
+
 	return true
 }
 //----------------------------------------------------------------------------------------------
-public cleanXP(bool:clearAll)
+cleanXP(bool:clearAll)
 {
-	if ( !clearAll && (!get_cvar_num("sh_savexp") || get_cvar_num("sh_xpsavedays") < 0)) return
+	if ( clearAll ) {
+		nvault_prune(gVaultHandle, 0, 0)
+	}
+	else if ( get_pcvar_num(sh_savexp) ) {
+		new xpSaveDays = get_pcvar_num(sh_xpsavedays)
 
-	if (clearAll)	nvault_prune(gVaultHandle, 0, 0)
-	else			nvault_prune(gVaultHandle, 0, get_systime() - (get_cvar_num("sh_xpsavedays") * 24 * 3600))
+		if ( xpSaveDays < 0 ) return
+
+		nvault_prune(gVaultHandle, 0, get_systime() - (xpSaveDays * 24 * 3600))
+	}
 }
 //----------------------------------------------------------------------------------------------
-public saving_end()
+saving_end()
 {
 	//Close the vault to save all the data
 	nvault_close(gVaultHandle)
