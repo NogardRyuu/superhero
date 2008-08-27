@@ -27,7 +27,7 @@
 //----------------------------------------------------------------------------------------------
 
 #define SH_VERSION		1.20
-stock const SH_VERSION_STR[] =	"1.2.0.8";
+stock const SH_VERSION_STR[] =	"1.2.0.9";
 
 // Cooldown task id, required to allow core to stop task
 #define SH_COOLDOWN_TASKID	572910

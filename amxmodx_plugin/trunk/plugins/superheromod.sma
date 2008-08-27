@@ -770,14 +770,14 @@ public plugin_cfg()
 	// Check to see if we need to block weapon giving heroes
 	giveWeaponConfig()
 
+	// Setup XPGiven and XP
+	readINI()
+
 	// Check the CVARs
 	cvarCheck()
 
 	// Clean out old XP data
 	cleanXP(false)
-
-	// Setup XPGiven and XP
-	readINI()
 
 	// Setup the Help MOTD
 	setupHelpMotd()
