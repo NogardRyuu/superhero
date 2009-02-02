@@ -19,7 +19,7 @@ new gVaultFile[128]
 //----------------------------------------------------------------------------------------------
 saving_init()
 {
-	get_localinfo("amxx_vault", gVaultFile, 127)
+	get_localinfo("amxx_vault", gVaultFile, charsmax(gVaultFile))
 }
 //----------------------------------------------------------------------------------------------
 parseXP(id, const data[])
@@ -30,22 +30,22 @@ parseXP(id, const data[])
 	Left[0] = '^0'
 	Right[0] = '^0'
 
-	copy(Right, 1500, data)
+	copy(Right, charsmax(Right), data)
 
 	//Get the name out
-	strbrkqt(Right, Left, 31, Right, 1500)
+	strbrkqt(Right, Left, charsmax(Left), Right, charsmax(Right))
 
 	//Get the epochtime out
-	strbrkqt(Right, Left, 31, Right, 1500)
+	strbrkqt(Right, Left, charsmax(Left), Right, charsmax(Right))
 
 	//Get the XP out and save it
-	strbrkqt(Right, Left, 31, Right, 1500)
+	strbrkqt(Right, Left, charsmax(Left), Right, charsmax(Right))
 	gPlayerXP[id] = str_to_num(Left)
 	gPlayerLevel[id] = getPlayerLevel(id)
 	setLevel(id, gPlayerLevel[id])
 
 	//Get the User Flags out and save them
-	strbrkqt(Right, Left, 31, Right, 1500)
+	strbrkqt(Right, Left, charsmax(Left), Right, charsmax(Right))
 	gPlayerFlags[id] = str_to_num(Left)
 
 	//Now load in all the skills
@@ -53,7 +53,7 @@ parseXP(id, const data[])
 	new MaxPowers = min(get_pcvar_num(sh_maxpowers), SH_MAXLEVELS)
 
 	while ( Right[0] != '^0' && powerCount < MaxPowers ) {
-		strbrkqt(Right, Left, 31, Right, 1500)
+		strbrkqt(Right, Left, charsmax(Left), Right, charsmax(Right))
 		heroIndex = getHeroID(Left)
 		if ( -1 < heroIndex < gSuperHeroCount )  {
 			if ( getHeroLevel(heroIndex) <= gPlayerLevel[id] ) {
@@ -91,22 +91,21 @@ writeData(id)
 	static data[1501], vaultSaveKey[39]
 	new heroIndex, len
 	new powerCount = gMemoryTablePowers[id][0]
-	new maxlen = 1500
 
 	data[0] = '^0'
 	vaultSaveKey[0] = '^0'
 
-	len += formatex(data[len], maxlen-len, "^"%s^" %d %d %d", gMemoryTableNames[id], get_systime(), gMemoryTableXP[id], gMemoryTableFlags[id])
+	len += formatex(data[len], charsmax(data)-len, "^"%s^" %d %d %d", gMemoryTableNames[id], get_systime(), gMemoryTableXP[id], gMemoryTableFlags[id])
 
 	// x is not a hero index but the amount of heroes to get gNumLevels
-	for ( new x = 1; x <= powerCount && x <= gSuperHeroCount && len < maxlen; x++ ) {
+	for ( new x = 1; x <= powerCount && x <= gSuperHeroCount && len < charsmax(data); x++ ) {
 		heroIndex = gMemoryTablePowers[id][x]
 		if ( -1 < heroIndex < gSuperHeroCount ) {
-			len += formatex(data[len], maxlen-len, " ^"%s^"", gSuperHeros[heroIndex][hero])
+			len += formatex(data[len], charsmax(data)-len, " ^"%s^"", gSuperHeros[heroIndex][hero])
 		}
 	}
 
-	formatex(vaultSaveKey, 38, "shinfo.%s", gMemoryTableKeys[id])
+	formatex(vaultSaveKey, charsmax(vaultSaveKey), "shinfo.%s", gMemoryTableKeys[id])
 
 	set_vaultdata(vaultSaveKey, data)
 
@@ -121,8 +120,8 @@ loadXP(id, const savekey[32])
 	data[0] = '^0'
 	vaultSaveKey[0] = '^0'
 
-	formatex(vaultSaveKey, 38, "shinfo.%s", savekey)
-	get_vaultdata(vaultSaveKey, data, 1500)
+	formatex(vaultSaveKey, charsmax(vaultSaveKey), "shinfo.%s", savekey)
+	get_vaultdata(vaultSaveKey, data, charsmax(data))
 
 	if ( strlen(data) > 12 ) {
 		parseXP(id, data)
@@ -145,7 +144,7 @@ cleanXP(bool:clearAll)
 
 	// Create a copy of savekeys to remove
 	new temp[128]
-	formatex(temp, 127, "%s~", gVaultFile)
+	formatex(temp, charsmax(temp), "%s~", gVaultFile)
 
 	new vaultFile = fopen(gVaultFile, "r")
 	new tempFile = fopen(temp, "w+")
@@ -172,21 +171,21 @@ cleanXP(bool:clearAll)
 
 		// Read the line in vault and if sh save info check to see if we should copy vault key to temp file
 		// Don't need to read whole line only enough for what we need to parse
-		fgets(vaultFile, data, 127)
+		fgets(vaultFile, data, charsmax(data))
 
 		if ( equal(data, "shinfo", 6) ) {
 			vaultSaveKey[0] = '^0'
 
 			if ( clearAll ) {
 				// Copy all keys to be cleared
-				parse(data, vaultSaveKey, 38)
+				parse(data, vaultSaveKey, charsmax(vaultSaveKey))
 				fprintf(tempFile, "%s^n", vaultSaveKey)
 			}
 			else {
 				// Only copy keys if older than max save days and not immune to reset
 				epoch[0] = '^0'
 				flags[0] = '^0'
-				parse(data, vaultSaveKey, 38, name, 31, epoch, 15, xp, 11, flags, 3)
+				parse(data, vaultSaveKey, charsmax(vaultSaveKey), name, charsmax(name), epoch, charsmax(epoch), xp, charsmax(xp), flags, charsmax(flags))
 
 				if ( (str_to_num(epoch) + maxTime) < curTime && !(str_to_num(flags)&SH_FLAG_XPIMMUNE) ) {
 					fprintf(tempFile, "%s^n", vaultSaveKey)
@@ -207,7 +206,7 @@ cleanXP(bool:clearAll)
 		while ( !feof(tempFile) ) {
 			vaultSaveKey[0] = '^0'
 
-			fgets(tempFile, vaultSaveKey, 38)
+			fgets(tempFile, vaultSaveKey, charsmax(vaultSaveKey))
 			trim(vaultSaveKey)
 
 			if ( vaultSaveKey[0] != '^0' ) remove_vaultdata(vaultSaveKey)

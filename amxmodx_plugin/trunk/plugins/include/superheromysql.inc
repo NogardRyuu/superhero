@@ -53,13 +53,14 @@ ALTER TABLE `sh_saveskills` CHANGE `SKILL_NUMBER` `SKILL_NUMBER` TINYINT( 3 ) UN
 //Comment this out to use old syntax for MySQL 3.23
 #define NEW_MYSQL
 
-#include <dbi>
+#include <sqlx>
 
 // Global to this save class
-new Sql:gMySQL = SQL_FAILED
+new Handle:gDbTuple
+new Handle:gDbConnect
 new gVaultFile[128]
 new bool:gPersistentTemp
-new bool:CreateTables = true
+new bool:gCreateTables = true
 new sh_mysql_host, sh_mysql_user, sh_mysql_pass
 new sh_mysql_db, sh_mysql_persistent
 //----------------------------------------------------------------------------------------------
@@ -73,7 +74,7 @@ saving_init()
 
 	register_concmd("amx_shvaulttosql", "adminCopyVault", ADMIN_RCON, "- Copies vault XP to MySQL, should only be done once.")
 
-	get_localinfo("amxx_vault", gVaultFile, 127)
+	get_localinfo("amxx_vault", gVaultFile, charsmax(gVaultFile))
 }
 //----------------------------------------------------------------------------------------------
 public adminCopyVault(id, level, cid)
@@ -82,7 +83,7 @@ public adminCopyVault(id, level, cid)
 
 	mySQLConnect()
 
-	if ( gMySQL <= SQL_FAILED ) return
+	if ( gDbConnect == Empty_Handle ) return
 
 	//Turn Persistant on for this function
 	gPersistentTemp = true
@@ -111,7 +112,7 @@ public adminCopyVHelper(parm[])
 	new lengthRead
 	new data[512]
 
-	while ((nextLine = read_file(gVaultFile,nextLine,data,511,lengthRead)) != 0) {
+	while ((nextLine = read_file(gVaultFile, nextLine, data, charsmax(data), lengthRead)) != 0) {
 		if ( lengthRead > 0 && containi(data, "shinfo") == 0 ) {
 			parseXP(gMemoryTableSize - 1, data)
 			if (nextLine % 200 == 0) {
@@ -150,26 +151,26 @@ parseXP(id, const data[])
 	Left[0] = '^0'
 	Right[0] = '^0'
 
-	copy(Right, 1500, data)
+	copy(Right, charsmax(Right), data)
 
 	//Get the key out
-	strbrkqt(Right, Left, 38, Right, 1500)
-	replace(Left, 38, "shinfo.", "" )
-	copy(gMemoryTableKeys[id], 31, Left)
+	strbrkqt(Right, Left, charsmax(Left), Right, charsmax(Right))
+	replace(Left, charsmax(Left), "shinfo.", "")
+	copy(gMemoryTableKeys[id], charsmax(gMemoryTableKeys[]), Left)
 
 	//Get the name out
-	strbrkqt(Right, Left, 38, Right, 1500)
-	copy(gMemoryTableNames[id], 31, Left)
+	strbrkqt(Right, Left, charsmax(Left), Right, charsmax(Right))
+	copy(gMemoryTableNames[id], charsmax(gMemoryTableNames[]), Left)
 
 	//Get the epochtime out
-	strbrkqt(Right, Left, 38, Right, 1500)
+	strbrkqt(Right, Left, charsmax(Left), Right, charsmax(Right))
 
 	//Get the XP out and save it
-	strbrkqt(Right, Left, 38, Right, 1500)
+	strbrkqt(Right, Left, charsmax(Left), Right, charsmax(Right))
 	gMemoryTableXP[id] = str_to_num(Left)
 
 	//Get the HUD Status out
-	strbrkqt(Right, Left, 38, Right, 1500)
+	strbrkqt(Right, Left, charsmax(Left), Right, charsmax(Right))
 	gMemoryTableFlags[id] = str_to_num(Left)
 
 	//Now load in all the skills
@@ -177,7 +178,7 @@ parseXP(id, const data[])
 	new MaxPowers = min(get_pcvar_num(sh_maxpowers), SH_MAXLEVELS)
 
 	while ( Right[0] != '^0' && powerCount < MaxPowers ) {
-		strbrkqt(Right, Left, 38, Right, 1500)
+		strbrkqt(Right, Left, charsmax(Left), Right, charsmax(Right))
 		heroIndex = getHeroID(Left)
 		if ( heroIndex >= 0 )  {
 			gMemoryTablePowers[id][0] = ++powerCount
@@ -223,53 +224,75 @@ public memoryTableWrite()
 //----------------------------------------------------------------------------------------------
 mySQLConnect()
 {
-	if ( gMySQL >= SQL_OK ) {
+	if ( gDbConnect ) {
 		if ( !get_pcvar_num(sh_mysql_persistent) && !gPersistentTemp ) close_mysql()
 		else return
 	}
 
-	static host[64], user[32], pass[32], db[32], error[128]
+	// Only create the tuple it was not done yet or a connection could not be made
+	static host[64], user[32], pass[32], db[32]
+	if ( !gDbTuple ) {
+		get_pcvar_string(sh_mysql_host, host, charsmax(host))
+		get_pcvar_string(sh_mysql_user, user, charsmax(user))
+		get_pcvar_string(sh_mysql_pass, pass, charsmax(pass))
+		get_pcvar_string(sh_mysql_db, db, charsmax(db))
 
-	get_pcvar_string(sh_mysql_host, host, 63)
-	get_pcvar_string(sh_mysql_user, user, 31)
-	get_pcvar_string(sh_mysql_pass, pass, 31)
-	get_pcvar_string(sh_mysql_db, db, 31)
+		if ( host[0] == '^0' && user[0] == '^0' && db[0] == '^0' ) {
+			get_cvar_string("amx_mysql_host", host, charsmax(host))
+			get_cvar_string("amx_mysql_user", user, charsmax(user))
+			get_cvar_string("amx_mysql_pass", pass, charsmax(pass))
+			get_cvar_string("amx_mysql_db", db, charsmax(db))
+		}
 
-	if ( host[0] == '^0' && user[0] == '^0' && db[0] == '^0' ) {
-		get_cvar_string("amx_mysql_host", host, 63)
-		get_cvar_string("amx_mysql_user", user, 31)
-		get_cvar_string("amx_mysql_pass", pass, 31)
-		get_cvar_string("amx_mysql_db", db, 31)
+		//mysql only for now
+		SQL_SetAffinity("mysql")
+
+		// Set up the tuple, cache the information
+		gDbTuple = SQL_MakeDbTuple(host, user, pass, db)
 	}
 
-	gMySQL = dbi_connect(host, user, pass, db, error, 127)
-	if ( gMySQL <= SQL_FAILED ) {
-		debugMsg(0, 0, "MySQL connect error: '%s' (%s,%s,%s)", error, host, user, db)
+	// Attempt to connect
+	static error[128]
+	new errcode
+	if ( gDbTuple ) gDbConnect = SQL_Connect(gDbTuple, errcode, error, charsmax(error))
+
+	if ( gDbConnect == Empty_Handle ) {
+		debugMsg(0, 0, "MySQL connect error: [%d] '%s' (%s,%s,%s)", errcode, error, host, user, db)
+
+		// Free the tuple on a connection error
+		SQL_FreeHandle(gDbTuple)
+		gDbTuple = Empty_Handle
 		return
 	}
-	else if ( CreateTables ) {
-		// Only try to create the tables once
-		static sql[512]
-		new Result:retval
 
-		copy(sql, 511, "CREATE TABLE IF NOT EXISTS `sh_savexp` ( `SH_KEY` varchar(32) binary NOT NULL default '', `PLAYER_NAME` varchar(32) binary NOT NULL default '', `LAST_PLAY_DATE` timestamp(14) NOT NULL, `XP` int(10) NOT NULL default '0', `HUDHELP` tinyint(3) unsigned NOT NULL default '1', `SKILL_COUNT` tinyint(3) unsigned NOT NULL default '0', PRIMARY KEY  (`SH_KEY`) ) TYPE=MyISAM COMMENT='SUPERHERO XP Saving Table'")
-		retval = dbi_query(gMySQL, sql)
-		if ( retval <= RESULT_FAILED ) {
-			dbi_error(gMySQL, error, 127)
-			debugMsg(0, 0, "Error Making Tables: '%s' - '%s'", error, sql)
+	if ( gCreateTables ) {
+		// Only try to create the tables once
+		static sql[410]
+		new Handle:query
+
+		copy(sql, charsmax(sql), "CREATE TABLE IF NOT EXISTS `sh_savexp` ( `SH_KEY` varchar(32) binary NOT NULL default '', `PLAYER_NAME` varchar(32) binary NOT NULL default '', `LAST_PLAY_DATE` timestamp(14) NOT NULL, `XP` int(10) NOT NULL default '0', `HUDHELP` tinyint(3) unsigned NOT NULL default '1', `SKILL_COUNT` tinyint(3) unsigned NOT NULL default '0', PRIMARY KEY  (`SH_KEY`) ) TYPE=MyISAM COMMENT='SUPERHERO XP Saving Table'")
+
+		query = SQL_PrepareQuery(gDbConnect, "%s", sql)
+		if ( !SQL_Execute(query) ) {
+			errcode = SQL_QueryError(query, error, charsmax(error))
+			debugMsg(0, 0, "Error Making Tables: [%d] '%s' - '%s'", errcode, error, sql)
+			SQL_FreeHandle(query)
 			return
 		}
+		SQL_FreeHandle(query)
 
 		sql[0] = '^0'
-		copy(sql, 511, "CREATE TABLE IF NOT EXISTS `sh_saveskills` ( `SH_KEY` varchar(32) binary NOT NULL default '', `SKILL_NUMBER` tinyint(3) unsigned NOT NULL default '0', `HERO_NAME` varchar(25) NOT NULL default '', PRIMARY KEY  (`SH_KEY`,`SKILL_NUMBER`) ) TYPE=MyISAM COMMENT='SUPERHERO Skill Saving Table'")
-		retval = dbi_query(gMySQL, sql)
-		if ( retval <= RESULT_FAILED ) {
-			dbi_error(gMySQL, error, 127)
-			debugMsg(0, 0, "Error Making Tables: '%s' - '%s'", error, sql)
+		copy(sql, charsmax(sql), "CREATE TABLE IF NOT EXISTS `sh_saveskills` ( `SH_KEY` varchar(32) binary NOT NULL default '', `SKILL_NUMBER` tinyint(3) unsigned NOT NULL default '0', `HERO_NAME` varchar(25) NOT NULL default '', PRIMARY KEY  (`SH_KEY`,`SKILL_NUMBER`) ) TYPE=MyISAM COMMENT='SUPERHERO Skill Saving Table'")
+		query = SQL_PrepareQuery(gDbConnect, "%s", sql)
+		if ( !SQL_Execute(query) ) {
+			errcode = SQL_QueryError(query, error, charsmax(error))
+			debugMsg(0, 0, "Error Making Tables: [%d] '%s' - '%s'", errcode, error, sql)
+			SQL_FreeHandle(query)
 			return
 		}
+		SQL_FreeHandle(query)
 
-		CreateTables = false
+		gCreateTables = false
 	}
 }
 //----------------------------------------------------------------------------------------------
@@ -278,78 +301,97 @@ writeData(x)
 {
 	mySQLConnect()
 
-	if ( gMySQL <= SQL_FAILED ) return
+	if ( gDbConnect == Empty_Handle ) return
 
 	debugMsg(x, 8, "Trying to save XP data to MySQL database")
 
-	static error[128], sql[512]
-	new Result:retval, Result:retvalins
+	static error[128], sql[540]
+	new Handle:query
+	new errcode
 
 	static savekey[63]
-	copy(savekey, 62, gMemoryTableKeys[x])
-	replace_all(savekey, 62, "`", "\`")
-	replace_all(savekey, 62, "'", "\'")
+	copy(savekey, charsmax(savekey), gMemoryTableKeys[x])
+	replace_all(savekey, charsmax(savekey), "'", "\'")
+
+	static bkqtname[63]
+	copy(bkqtname, charsmax(bkqtname), gMemoryTableNames[x])
+	replace_all(bkqtname, charsmax(bkqtname), "'", "\'")
 
 	// Thanks to HC for help with writing more efficient queries
 	// Check if this user has an entry already, if not make one
-	formatex(sql, 511, "SELECT * FROM `sh_savexp` WHERE `SH_KEY` = '%s'", savekey)
-	retval = dbi_query(gMySQL, sql)
+	formatex(sql, charsmax(sql), "UPDATE `sh_savexp` SET `PLAYER_NAME`='%s', `LAST_PLAY_DATE`=SYSDATE(), `XP`='%d', `HUDHELP`='%d', `SKILL_COUNT`='%d' WHERE `SH_KEY`='%s'", bkqtname, gMemoryTableXP[x], gMemoryTableFlags[x], gMemoryTablePowers[x][0], savekey)
+	query = SQL_PrepareQuery(gDbConnect, "%s", sql)
 
-	if ( retval <= RESULT_FAILED ) {
-		dbi_error(gMySQL, error, 127)
-		debugMsg(0, 0, "Error Querying MySQL DB for %s: '%s' - '%s'", savekey, error, sql)
+	if ( !SQL_Execute(query) ) {
+		errcode = SQL_QueryError(query, error, charsmax(error))
+		debugMsg(0, 0, "Error Querying MySQL DB for %s: [%d] '%s' - '%s'", savekey, errcode, error, sql)
+		SQL_FreeHandle(query)
 		return
 	}
-	else if ( retval == RESULT_NONE || !dbi_nextrow(retval) ) {
-		formatex(sql, 511, "INSERT INTO `sh_savexp` (SH_KEY) VALUES ('%s')", savekey)
-		retvalins = dbi_query(gMySQL, sql)
-		if ( retvalins <= RESULT_FAILED ) {
-			dbi_error(gMySQL, error, 127)
-			debugMsg(0, 0, "Error Writing MySQL XP for %s: '%s' - '%s'", savekey, error, sql)
+
+	if ( !SQL_AffectedRows(query) ) {
+		SQL_FreeHandle(query)
+		// There is no entry for this user lets create one
+		sql[0] = '^0'
+		formatex(sql, charsmax(sql), "INSERT INTO `sh_savexp` (`SH_KEY`, `PLAYER_NAME`, `LAST_PLAY_DATE`, `XP`, `HUDHELP`, `SKILL_COUNT`) VALUES ('%s', '%s', SYSDATE(), '%d', '%d', '%d')", savekey, bkqtname, gMemoryTableXP[x], gMemoryTableFlags[x], gMemoryTablePowers[x][0])
+		query = SQL_PrepareQuery(gDbConnect, "%s", sql)
+		if ( !SQL_Execute(query) ) {
+			errcode = SQL_QueryError(query, error, charsmax(error))
+			debugMsg(0, 0, "Error Writing MySQL XP for %s: [%d] '%s' - '%s'", savekey, errcode, error, sql)
+			SQL_FreeHandle(query)
 			return
 		}
 	}
-
-	if ( retval >= RESULT_OK ) dbi_free_result(retval)
-
-	static bkqtname[63]
-	copy(bkqtname, 62, gMemoryTableNames[x])
-	replace_all(bkqtname, 62, "`", "\`")
-	replace_all(bkqtname, 62, "'", "\'")
-
-	//Update users entry with current data
-	formatex(sql, 511, "UPDATE `sh_savexp` SET `PLAYER_NAME`='%s', `LAST_PLAY_DATE`=SYSDATE(), `XP`='%d', `HUDHELP`='%d', `SKILL_COUNT`='%d' WHERE SH_KEY='%s'", bkqtname, gMemoryTableXP[x], gMemoryTableFlags[x], gMemoryTablePowers[x][0], savekey)
-	retval = dbi_query(gMySQL, sql)
-	if (retval <= RESULT_FAILED) {
-		dbi_error(gMySQL, error, 127)
-		debugMsg(0, 0, "Error Writing MySQL XP for %s: '%s' - '%s'", savekey, error, sql)
-		return
-	}
+	SQL_FreeHandle(query)
 
 	if ( !is_user_connected(x) || gChangedHeroes[x] ) {
 
 		// Remove all saved powers for this user
-		formatex(sql, 511, "DELETE FROM `sh_saveskills` WHERE SH_KEY='%s'", savekey)
-		retval = dbi_query(gMySQL, sql)
-		if (retval <= RESULT_FAILED) {
-			dbi_error(gMySQL, error, 127)
-			debugMsg(0, 0, "Error Deleting MySQL Skills for %s: '%s' - '%s'", savekey, error, sql)
+		sql[0] = '^0'
+		formatex(sql, charsmax(sql), "DELETE FROM `sh_saveskills` WHERE `SH_KEY`='%s'", savekey)
+		query = SQL_PrepareQuery(gDbConnect, "%s", sql)
+		if ( !SQL_Execute(query) ) {
+			errcode = SQL_QueryError(query, error, charsmax(error))
+			debugMsg(0, 0, "Error Deleting MySQL Skills for %s: [%d] '%s' - '%s'", savekey, errcode, error, sql)
+			SQL_FreeHandle(query)
 			return
 		}
-		new heroIndex, numHeroes
-		numHeroes = gMemoryTablePowers[x][0]
+		SQL_FreeHandle(query)
+
 		// Saving by SuperHeroName since the hero order in the plugin.ini can change...
+		new numHeroes, count, n
+		numHeroes = gMemoryTablePowers[x][0]
+
 		for ( new p = 1; p <= numHeroes; p++ ) {
-			heroIndex = gMemoryTablePowers[x][p]
-			formatex(sql, 511, "INSERT INTO `sh_saveskills` VALUES ('%s','%d','%s')", savekey, p, gSuperHeros[heroIndex][hero])
-			retval = dbi_query(gMySQL, sql)
-			if ( retval <= RESULT_FAILED ) {
-				dbi_error(gMySQL, error, 127)
-				debugMsg(0, 0, "Error Writing MySQL XP for %s: '%s' - '%s'", savekey, error, sql)
-				return
+			//heroIndex = gMemoryTablePowers[x][p] //Value only used once per loop no need to set variable, but leave here to see what it is
+			if ( !count ) {
+				sql[0] = '^0'
+				n = copy(sql, charsmax(sql), "INSERT INTO `sh_saveskills` VALUES ")
+			}
+
+			// (savekey, user's hero number, hero name)
+			n += formatex(sql[n], charsmax(sql)-n, "('%s','%d','%s')", savekey, p, gSuperHeros[gMemoryTablePowers[x][p]][hero])
+			++count
+
+			// sql[] should not exceed 543 with 5 inserts
+			// Send the query and reset the count if count is 5 or it's the last hero of the loop
+			if ( count == 5 || p == numHeroes ) {
+				count = 0
+				query = SQL_PrepareQuery(gDbConnect, "%s", sql)
+				if ( !SQL_Execute(query) ) {
+					errcode = SQL_QueryError(query, error, charsmax(error))
+					debugMsg(0, 0, "Error Writing MySQL Skills for %s: [%d] '%s' - '%s'", savekey, errcode, error, sql)
+					SQL_FreeHandle(query)
+					return
+				}
+				SQL_FreeHandle(query)
+			}
+			else {
+				n += add(sql[n], charsmax(sql)-n, ", ")
 			}
 		}
 
+		// x can be higher than max slots, however sizeof gChangedHeroes can not be
 		if ( 0 < x <= SH_MAXSLOTS ) {
 			gChangedHeroes[x] = false
 		}
@@ -359,33 +401,36 @@ writeData(x)
 	close_mysql()
 }
 //----------------------------------------------------------------------------------------------
+//immediate use, no threading
 loadXP(id, const savekey[32])
 {
 	mySQLConnect()
-	if ( gMySQL <= SQL_FAILED ) return false
+
+	if ( gDbConnect == Empty_Handle ) return false
 
 	debugMsg(id, 8, "Trying to load XP data from MySQL database")
 
-	static sql[512], error[128], shkey[63]
-	new Result:retvalxp
+	static sql[180], error[128], shkey[63]
+	new Handle:query
+	new errcode
 
-	copy(shkey, 62, savekey)
-	replace_all(shkey, 62, "`", "\`")
-	replace_all(shkey, 62, "'", "\'")
+	copy(shkey, charsmax(shkey), savekey)
+	replace_all(shkey, charsmax(shkey), "'", "\'")
 
-	formatex(sql, 511, "SELECT `XP`, `HUDHELP`, `SKILL_COUNT` FROM `sh_savexp` WHERE `SH_KEY` = '%s'", shkey)
-	retvalxp = dbi_query(gMySQL, sql)
+	sql[0] = '^0'
+	formatex(sql, charsmax(sql), "SELECT `XP`, `HUDHELP`, `SKILL_COUNT` FROM `sh_savexp` WHERE `SH_KEY` = '%s'", shkey)
+	query = SQL_PrepareQuery(gDbConnect, "%s", sql)
 
-	if ( retvalxp <= RESULT_FAILED ) {
-		dbi_error(gMySQL, error, 127)
-		debugMsg(0, 0, "Error Loading MySQL XP for %s: '%s' - '%s'", shkey, error, sql)
+	if ( !SQL_Execute(query) ) {
+		errcode = SQL_QueryError(query, error, charsmax(error))
+		debugMsg(0, 0, "Error Loading MySQL XP for %s: [%d] '%s' - '%s'", shkey, errcode, error, sql)
+		SQL_FreeHandle(query)
 		return false
 	}
-	else if ( retvalxp == RESULT_NONE || !dbi_nextrow(retvalxp) ) {
-		dbi_error(gMySQL, error, 127)
-		debugMsg(id, 1, "No Saved XP Loaded for %s: '%s'", shkey, error)
 
-		if ( retvalxp >= RESULT_OK ) dbi_free_result(retvalxp)
+	if ( !SQL_NumResults(query) ) {
+		debugMsg(id, 1, "No Saved XP to Load for ^"%s^"", shkey)
+		SQL_FreeHandle(query)
 
 		//Closes the connection if set not to be persistent
 		close_mysql()
@@ -393,48 +438,50 @@ loadXP(id, const savekey[32])
 		return true
 	}
 
-	static xp[12], skillCount[4], userFlags[4]
-	new playerLevel, Result:retvalskill
+	static skillCount[4]
+	new playerLevel
 
-	dbi_field(retvalxp, 1, xp, 11)
-	gPlayerXP[id] = str_to_num(xp)
+	gPlayerXP[id] = SQL_ReadResult(query, 0)
 	gPlayerLevel[id] = playerLevel = getPlayerLevel(id)
 	setLevel(id, playerLevel)
 
-	dbi_field(retvalxp, 2, userFlags, 3)
-	gPlayerFlags[id] = str_to_num(userFlags)
+	gPlayerFlags[id] = SQL_ReadResult(query, 1)
 
-	dbi_field(retvalxp, 3, skillCount, 3)
+	SQL_ReadResult(query, 2, skillCount, charsmax(skillCount))
 
-	if ( retvalxp >= RESULT_OK ) dbi_free_result(retvalxp)
+	SQL_FreeHandle(query)
 
-	formatex(sql, 511, "SELECT `HERO_NAME` FROM `sh_saveskills` WHERE `SH_KEY` = '%s' AND `SKILL_NUMBER` <= '%s' ORDER BY `SKILL_NUMBER` ASC", shkey, skillCount)
-	retvalskill = dbi_query(gMySQL, sql)
+	sql[0] = '^0'
+	formatex(sql, charsmax(sql), "SELECT `HERO_NAME` FROM `sh_saveskills` WHERE `SH_KEY` = '%s' AND `SKILL_NUMBER` <= '%s' ORDER BY `SKILL_NUMBER` ASC", shkey, skillCount)
+	query = SQL_PrepareQuery(gDbConnect, "%s", sql)
 
-	if ( retvalskill <= RESULT_FAILED ) {
-		dbi_error(gMySQL, error, 127)
-		debugMsg(0, 0, "Error Loading MySQL XP for %s: '%s' - '%s'", shkey, error, sql)
+	if ( !SQL_Execute(query) ) {
+		errcode = SQL_QueryError(query, error, charsmax(error))
+		debugMsg(0, 0, "Error Loading MySQL XP for %s: [%d] '%s' - '%s'", shkey, errcode, error, sql)
+		SQL_FreeHandle(query)
 		return false
 	}
 
-	if ( retvalskill != RESULT_NONE ) {
+	if ( SQL_NumResults(query) ) {
 		static heroName[25]
 		new heroIndex, skills
 		gPlayerPowers[id][0] = 0
 
-		while ( dbi_nextrow(retvalskill) ) {
+		while ( SQL_MoreResults(query) ) {
 			heroName[0] = '^0'
-			dbi_field(retvalskill, 1, heroName, 24)
+			SQL_ReadResult(query, 0, heroName, charsmax(heroName))
 			heroIndex = getHeroID(heroName)
 			if ( -1 < heroIndex < gSuperHeroCount && getHeroLevel(heroIndex) <= playerLevel ) {
 				gPlayerPowers[id][0] = ++skills
 				gPlayerPowers[id][skills] = heroIndex
 				initHero(id, heroIndex, SH_HERO_ADD)
 			}
+
+			SQL_NextRow(query)
 		}
 	}
 
-	if ( retvalskill >= RESULT_OK ) dbi_free_result(retvalskill)
+	SQL_FreeHandle(query)
 
 	memoryTableUpdate(id)
 
@@ -450,91 +497,117 @@ cleanXP(bool:clearAll)
 
 	if ( !clearAll && (!get_pcvar_num(sh_savexp) || xpSaveDays < 0) ) return
 
-	static error[128], sql[255]
-	new Result:retval
-
 	mySQLConnect()
-	if ( gMySQL <= SQL_FAILED ) return
+
+	if ( gDbConnect == Empty_Handle ) return
+
+	static error[128], sql[216]
+	new Handle:query
+	new errcode
 
 	if ( clearAll ) {
-		formatex(sql, 254, "TRUNCATE TABLE `sh_saveskills`")
-		retval = dbi_query(gMySQL, sql)
-		if ( retval <= RESULT_FAILED ) {
-			dbi_error(gMySQL, error, 127)
-			debugMsg(0, 0, "Couldn't Erase XP: '%s' - '%s'", error, sql)
+		sql[0] = '^0'
+		formatex(sql, charsmax(sql), "TRUNCATE TABLE `sh_saveskills`")
+		query = SQL_PrepareQuery(gDbConnect, "%s", sql)
+		if ( !SQL_Execute(query) ) {
+			errcode = SQL_QueryError(query, error, charsmax(error))
+			debugMsg(0, 0, "Couldn't Erase XP: [%d] '%s' - '%s'", errcode, error, sql)
+			SQL_FreeHandle(query)
 			return
 		}
+		SQL_FreeHandle(query)
 
-		formatex(sql, 254, "TRUNCATE TABLE `sh_savexp`")
-		retval = dbi_query(gMySQL, sql)
-		if ( retval <= RESULT_FAILED ) {
-			dbi_error(gMySQL, error, 127)
-			debugMsg(0, 0, "Couldn't Erase XP: '%s' - '%s'", error, sql)
+		sql[0] = '^0'
+		formatex(sql, charsmax(sql), "TRUNCATE TABLE `sh_savexp`")
+		query = SQL_PrepareQuery(gDbConnect, "%s", sql)
+		if ( !SQL_Execute(query) ) {
+			errcode = SQL_QueryError(query, error, charsmax(error))
+			debugMsg(0, 0, "Couldn't Erase XP: [%d] '%s' - '%s'", errcode, error, sql)
+			SQL_FreeHandle(query)
 			return
 		}
+		SQL_FreeHandle(query)
 	}
 	else {
 
 #if defined NEW_MYSQL
 
-		formatex(sql, 254, "DELETE FROM `sh_saveskills` USING `sh_saveskills`, `sh_savexp` WHERE sh_savexp.`SH_KEY` = sh_saveskills.`SH_KEY` AND sh_savexp.`LAST_PLAY_DATE` < (SYSDATE() - INTERVAL '%d' DAY) AND NOT (sh_savexp.`HUDHELP` & '%d')", xpSaveDays, SH_FLAG_XPIMMUNE)
-		retval = dbi_query(gMySQL, sql)
-		if ( retval <= RESULT_FAILED ) {
-			dbi_error(gMySQL, error, 127)
-			debugMsg(0, 0, "Couldn't Clean Powers: '%s' - '%s'", error, sql)
+		sql[0] = '^0'
+		formatex(sql, charsmax(sql), "DELETE FROM `sh_saveskills` USING `sh_saveskills`, `sh_savexp` WHERE sh_savexp.`SH_KEY` = sh_saveskills.`SH_KEY` AND sh_savexp.`LAST_PLAY_DATE` < (SYSDATE() - INTERVAL '%d' DAY) AND NOT (sh_savexp.`HUDHELP` & '%d')", xpSaveDays, SH_FLAG_XPIMMUNE)
+		query = SQL_PrepareQuery(gDbConnect, "%s", sql)
+		if ( !SQL_Execute(query) ) {
+			errcode = SQL_QueryError(query, error, charsmax(error))
+			debugMsg(0, 0, "Couldn't Clean Powers: [%d] '%s' - '%s'", errcode, error, sql)
+			SQL_FreeHandle(query)
 			return
 		}
+		SQL_FreeHandle(query)
 
-		formatex(sql, 254, "DELETE FROM `sh_savexp` WHERE `LAST_PLAY_DATE` < (SYSDATE() - INTERVAL '%d' DAY) AND NOT (`HUDHELP` & '%d')", xpSaveDays, SH_FLAG_XPIMMUNE)
-		retval = dbi_query(gMySQL, sql)
-		if ( retval <= RESULT_FAILED ) {
-			dbi_error(gMySQL, error, 127)
-			debugMsg(0, 0, "Couldn't Clean XP: '%s' - '%s'", error, sql)
+		sql[0] = '^0'
+		formatex(sql, charsmax(sql), "DELETE FROM `sh_savexp` WHERE `LAST_PLAY_DATE` < (SYSDATE() - INTERVAL '%d' DAY) AND NOT (`HUDHELP` & '%d')", xpSaveDays, SH_FLAG_XPIMMUNE)
+		query = SQL_PrepareQuery(gDbConnect, "%s", sql)
+		if ( !SQL_Execute(query) ) {
+			errcode = SQL_QueryError(query, error, charsmax(error))
+			debugMsg(0, 0, "Couldn't Clean XP: [%d] '%s' - '%s'", errcode, error, sql)
+			SQL_FreeHandle(query)
 			return
 		}
 
 #else
 
-		formatex(sql, 254, "SELECT `SH_KEY` FROM `sh_savexp` WHERE `LAST_PLAY_DATE` < (SYSDATE() - INTERVAL '%d' DAY) AND NOT (`HUDHELP` & '%d')", xpSaveDays, SH_FLAG_XPIMMUNE)
-		retval = dbi_query(gMySQL, sql)
-		if ( retval <= RESULT_FAILED ) {
-			dbi_error(gMySQL, error, 127)
-			debugMsg(0, 0, "Couldn't SELECT to Clean XP: '%s' - '%s'", error, sql)
+		sql[0] = '^0'
+		formatex(sql, charsmax(sql), "SELECT `SH_KEY` FROM `sh_savexp` WHERE `LAST_PLAY_DATE` < (SYSDATE() - INTERVAL '%d' DAY) AND NOT (`HUDHELP` & '%d')", xpSaveDays, SH_FLAG_XPIMMUNE)
+		query = SQL_PrepareQuery(gDbConnect, "%s", sql)
+		if ( !SQL_Execute(query) ) {
+			errcode = SQL_QueryError(query, error, charsmax(error))
+			debugMsg(0, 0, "Couldn't SELECT to Clean XP: [%d] '%s' - '%s'", errcode, error, sql)
+			SQL_FreeHandle(query)
 			return
 		}
 
-		new Result:retvaldel
-
-		if ( retval != RESULT_NONE ) {
+		if ( SQL_NumResults(query) ) {
 			static savekey[63]
-			while ( dbi_nextrow(retval) ) {
+			new Handle:query2
+			while ( SQL_MoreResults(query) ) {
 				savekey[0] = '^0'
-				dbi_field(retval, 1, savekey, 62)
-				if ( savekey[0] == '^0' ) return
+				SQL_ReadResult(query, 0, savekey, charsmax(savekey))
 
-				replace_all(savekey, 62, "`", "\`")
-				replace_all(savekey, 62, "'", "\'")
-
-				formatex(sql, 511, "DELETE FROM `sh_savexp` WHERE SH_KEY='%s'", savekey)
-				retvaldel = dbi_query(gMySQL, sql)
-				if ( retvaldel <= RESULT_FAILED ) {
-					dbi_error(gMySQL, error, 127)
-					debugMsg(0, 0, "Couldn't Clean XP: '%s' - '%s'", error, sql)
-					return
+				if ( savekey[0] == '^0' ) {
+					SQL_NextRow(query)
+					continue
 				}
 
-				formatex(sql, 511, "DELETE FROM `sh_saveskills` WHERE SH_KEY='%s'", savekey)
-				retvaldel = dbi_query(gMySQL, sql)
-				if ( retvaldel <= RESULT_FAILED ) {
-					dbi_error(gMySQL, error, 127)
-					debugMsg(0, 0, "Couldn't Clean Powers: '%s' - '%s'", error, sql)
+				replace_all(savekey, charsmax(savekey), "'", "\'")
+
+				sql[0] = '^0'
+				formatex(sql, charsmax(sql), "DELETE FROM `sh_savexp` WHERE `SH_KEY`='%s'", savekey)
+				query2 = SQL_PrepareQuery(gDbConnect, "%s", sql)
+				if ( !SQL_Execute(query2) ) {
+					errcode = SQL_QueryError(query2, error, charsmax(error))
+					debugMsg(0, 0, "Couldn't Clean XP: [%d] '%s' - '%s'", errcode, error, sql)
+					SQL_FreeHandle(query2)
 					return
 				}
+				SQL_FreeHandle(query2)
+
+				sql[0] = '^0'
+				formatex(sql, charsmax(sql), "DELETE FROM `sh_saveskills` WHERE `SH_KEY`='%s'", savekey)
+				query2 = SQL_PrepareQuery(gDbConnect, "%s", sql)
+				if ( !SQL_Execute(query2) ) {
+					errcode = SQL_QueryError(query2, error, charsmax(error))
+					debugMsg(0, 0, "Couldn't Clean Powers: [%d] '%s' - '%s'", errcode, error, sql)
+					SQL_FreeHandle(query2)
+					return
+				}
+				SQL_FreeHandle(query2)
+
+				SQL_NextRow(query)
 			}
 		}
-		if ( retval >= RESULT_OK ) dbi_free_result(retval)
 
 #endif
+
+		SQL_FreeHandle(query)
 	}
 
 	//Closes the connection if set not to be persistent
@@ -543,15 +616,23 @@ cleanXP(bool:clearAll)
 //----------------------------------------------------------------------------------------------
 close_mysql()
 {
-	if ( gMySQL <= SQL_FAILED || get_pcvar_num(sh_mysql_persistent) || gPersistentTemp ) return
+	if ( gDbConnect == Empty_Handle || get_pcvar_num(sh_mysql_persistent) || gPersistentTemp ) return
 
-	dbi_close(gMySQL)
+	SQL_FreeHandle(gDbConnect)
+	gDbConnect = Empty_Handle
 }
 //----------------------------------------------------------------------------------------------
 saving_end()
 {
-	if ( gMySQL <= SQL_FAILED ) return
+	if ( gDbConnect ) {
+		SQL_FreeHandle(gDbConnect)
+		gDbConnect = Empty_Handle
+		
+	}
 
-	dbi_close(gMySQL)
+	if ( gDbTuple ) {
+		SQL_FreeHandle(gDbTuple)
+		gDbTuple = Empty_Handle
+	}
 }
 //----------------------------------------------------------------------------------------------

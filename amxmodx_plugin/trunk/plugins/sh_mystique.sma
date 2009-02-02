@@ -60,11 +60,17 @@ public sh_hero_init(id, heroID, mode)
 public sh_client_spawn(id)
 {
 	gPlayerInCooldown[id] = false
+
+	if ( gMorphed[id] ) {
+		cs_reset_user_model(id)
+		remove_task(id)
+		gMorphed[id] = false
+	}
 }
 //----------------------------------------------------------------------------------------------
 public sh_hero_key(id, heroID, key)
 {
-	if ( gHeroID != heroID ) return
+	if ( gHeroID != heroID || !is_user_alive(id) ) return
 
 	switch(key)
 	{
@@ -75,23 +81,13 @@ public sh_hero_key(id, heroID, key)
 				return
 			}
 
-			if ( !is_user_alive(id) ) return
-
 			// Let them know they already used their ultimate if they have
 			if ( gPlayerInCooldown[id] ) {
 				sh_sound_deny(id)
 				return
 			}
 
-			new Float:cooldown = get_pcvar_float(pCvarCooldown)
-			if ( cooldown > 0.0 ) sh_set_cooldown(id, cooldown)
-
 			mystique_morph(id)
-
-			new Float:mystiqueMaxTime = get_pcvar_float(pCvarMaxTime)
-			if ( mystiqueMaxTime > 0.0 ) {
-				set_task(mystiqueMaxTime, "force_unmorph", id)
-			}
 		}
 
 		case SH_KEYUP: {
@@ -109,10 +105,9 @@ mystique_morph(id)
 
 	new newSkin[10]
 	new num = random_num(0, 3)
-
 	switch(cs_get_user_team(id)) {
-		case CS_TEAM_T: copy(newSkin, 9, CTSkins[num])
-		case CS_TEAM_CT: copy(newSkin, 9, TSkins[num])
+		case CS_TEAM_T: copy(newSkin, charsmax(newSkin), CTSkins[num])
+		case CS_TEAM_CT: copy(newSkin, charsmax(newSkin), TSkins[num])
 		default: return
 	}
 
@@ -124,22 +119,31 @@ mystique_morph(id)
 	// Message
 	set_hudmessage(200, 200, 0, -1.0, 0.45, 2, 0.02, 4.0, 0.01, 0.1, -1)
 	ShowSyncHudMsg(id, gMsgSync, "%s - YOU NOW LOOK LIKE THE ENEMY", gHeroName)
+
+	new Float:mystiqueMaxTime = get_pcvar_float(pCvarMaxTime)
+	if ( mystiqueMaxTime > 0.0 ) {
+		set_task(mystiqueMaxTime, "force_unmorph", id)
+	}
 }
 //----------------------------------------------------------------------------------------------
 mystique_unmorph(id)
 {
-	if ( gMorphed[id] )
-	{
-		set_hudmessage(200, 200, 0, -1.0, 0.45, 2, 0.02, 4.0, 0.01, 0.1, -1)
-		ShowSyncHudMsg(id, gMsgSync, "%s - RETURNED TO SELF", gHeroName)
+	if ( !gMorphed[id] || !is_user_connected(id) ) return
 
-		remove_task(id)
+	cs_reset_user_model(id)
 
-		cs_reset_user_model(id)
+	remove_task(id)
+	gMorphed[id] = false
 
-		gMorphed[id] = false
-		mystique_sound(id)
-	}
+	if ( !is_user_alive(id) ) return
+
+	mystique_sound(id)
+
+	set_hudmessage(200, 200, 0, -1.0, 0.45, 2, 0.02, 4.0, 0.01, 0.1, -1)
+	ShowSyncHudMsg(id, gMsgSync, "%s - RETURNED TO SELF", gHeroName)
+
+	new Float:cooldown = get_pcvar_float(pCvarCooldown)
+	if ( cooldown > 0.0 ) sh_set_cooldown(id, cooldown)
 }
 //----------------------------------------------------------------------------------------------
 mystique_sound(id)

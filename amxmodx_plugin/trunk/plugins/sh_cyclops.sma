@@ -14,12 +14,14 @@ cyclops_multishot 0.2			//Delay for multishots on holding key down
 #include <superheromod>
 
 // Damage Variables
-new const lDamage[5] = {
+new const lDamage[7] = {
 	100,	//head
-	56,	//body
+	56,	//chest
 	56,	//stomach
-	36,	//arms
-	36	//legs
+	36,	//left arm
+	36,	//right arm
+	36,	//left leg
+	36	//right leg
 }
 
 // GLOBAL VARIABLES
@@ -53,7 +55,7 @@ public plugin_init()
 
 	// Set to correct burn decals if mod is CZ
 	new mod_name[9]
-	get_modname(mod_name, 8)
+	get_modname(mod_name, charsmax(mod_name))
 	if ( equal(mod_name, "czero") ) gBurnDecal = {211, 212, 213, 214, 215}
 }
 //----------------------------------------------------------------------------------------------
@@ -184,21 +186,8 @@ public fire_laser(id)
 
 		emit_sound(tid, CHAN_BODY, gSoundHit, VOL_NORM, ATTN_NORM, 0, PITCH_NORM)
 
-		// Determine the damage
-		new damage, headshot
-		switch(tbody) {
-			case 1: {
-				damage = lDamage[0]
-				headshot = 1
-			}
-			case 2: damage = lDamage[1]
-			case 3: damage = lDamage[2]
-			case 4, 5: damage = lDamage[3]
-			case 6, 7: damage = lDamage[4]
-		}
-
 		// Deal the damage...
-		sh_extra_damage(tid, id, damage, "optic blast", headshot, SH_DMG_NORM, true)
+		sh_extra_damage(tid, id, lDamage[tbody-1], "optic blast", tbody == 1 ? 1 : 0, SH_DMG_NORM, true)
 	}
 }
 //----------------------------------------------------------------------------------------------

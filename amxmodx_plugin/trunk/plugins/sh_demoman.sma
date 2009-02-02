@@ -42,7 +42,7 @@ demoman_minehealth 80		// health of mines (determines how many shots blow them u
 #define MINE_ALPHA 60
 
 //Color definitions
-new LineColors[COLORS_NUM][3] = {
+new const LineColors[COLORS_NUM][3] = {
 	{150, 150, 150},	//Custom
 	{255, 0, 0},		//Red
 	{0, 255, 0},		//Green
@@ -128,7 +128,7 @@ public sh_hero_key(id, heroID, key)
 		if ( !is_user_alive(id) || !gHasDemolitionMan[id] ) return
 
 		create_mine(id)
-	}	
+	}
 }
 //----------------------------------------------------------------------------------------------
 create_mine(id)
@@ -200,7 +200,7 @@ create_mine(id)
 	vNewOrigin[1] = vTraceResult[1] + (vNormal[1] * 8.0)
 	vNewOrigin[2] = vTraceResult[2] + (vNormal[2] * 8.0)
 
-	engfunc(EngFunc_SetSize, NewEnt, {-8.0, -8.0, -8.0}, {8.0, 8.0, 8.0})
+	engfunc(EngFunc_SetSize, NewEnt, Float:{-8.0, -8.0, -8.0}, Float:{8.0, 8.0, 8.0})
 	engfunc(EngFunc_SetOrigin, NewEnt, vNewOrigin)
 
 	vector_to_angle(vNormal, vEntAngles)
@@ -211,9 +211,9 @@ create_mine(id)
 	set_pev(NewEnt, pev_v_angle, vEntAngles)
 
 	new Float:vBeamEnd[3], Float:vTracedBeamEnd[3]
-	vBeamEnd[0] = vNewOrigin[0] + (vNormal[0] * 8192)
-	vBeamEnd[1] = vNewOrigin[1] + (vNormal[1] * 8192)
-	vBeamEnd[2] = vNewOrigin[2] + (vNormal[2] * 8192)
+	vBeamEnd[0] = vNewOrigin[0] + (vNormal[0] * 8192.0)
+	vBeamEnd[1] = vNewOrigin[1] + (vNormal[1] * 8192.0)
+	vBeamEnd[2] = vNewOrigin[2] + (vNormal[2] * 8192.0)
 
 	tr = 0
 	engfunc(EngFunc_TraceLine, vNewOrigin, vBeamEnd, 1, -1, tr)
@@ -232,7 +232,7 @@ public mine_think(ent)
 
 	static classname[32]
 	classname[0] = '^0'
-	pev(ent, pev_classname, classname, 31)
+	pev(ent, pev_classname, classname, charsmax(classname))
 
 	if ( !equal(classname, "demoman_tripmine") ) return FMRES_IGNORED
 
@@ -314,7 +314,7 @@ detonate_mine(MineID, iHit)
 	}
 	else {
 		new name[32]
-		get_user_name(iHit, name, 31)
+		get_user_name(iHit, name, charsmax(name))
 		sh_chat_message(id, gHeroID, "%s detonated your mine", name)
 	}
 

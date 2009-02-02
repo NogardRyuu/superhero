@@ -12,7 +12,7 @@
 
 /****************************************************************************
 *
-*   Version 1.2.0 - Date: 08/17/2008
+*   Version 1.2.1 - Date: ??/??/200?
 *
 *   Original by {HOJ} Batman <johnbroderick@sbcglobal.net>
 *
@@ -49,6 +49,17 @@
 *                     ******** CSX Module REQUIRED ********
 *
 *  Changelog:
+*
+*  v1.2.1 - vittu - ??/??/??
+*	- 
+*	- Removed /savexp say command due to complaint of the xp removal it has done since version 1.17.4
+*	- Converted superheromysql.inc to use sqlx instead of dbi and optimized a bit
+*	- Fixed passing of some buffers into format routines
+*	- Changed menu string size and made it smaller, it had too much overhead
+*	- Added use of charsmax
+*	- Removed unnecessary checks and static's in stocks
+*	- Fixed Ham_Spawn's first Ham_Spawn call block method
+*	- Fix for amb1961: superhero.ini was being read too late causing sh_minlevel and sh_mercyxp cvars to be set improperly by core
 *
 *  v1.2.0 - JTP10181/vittu - 08/17/08
 *	  (took over where JTP10181 left off, mixture of both our work as follows below)
@@ -338,8 +349,9 @@
 *	- Add chosen hero child page to menu to verify hero choice, but mainly to add hero info there instead of using hud messages for powerHelp info.
 *	- Find a better method for blocking shield with primary bug or refine currently used one.
 *	- Clean up any issues with the say commands.
-*	- Check Mystique for possible mystique_toggle/mystique_maxtime cvar issue.
 *	- CVAR / define for saving XP by name (very low priority).
+*	- Possibly use threading only for mysql saving at round end (may require too much recoding).
+*	- Convert the read_file usage in superheromysql.inc to use new file natives.
 *
 **************************************************************************/
 
@@ -416,7 +428,6 @@ new gMaxHealth[SH_MAXSLOTS+1]
 new gMaxArmor[SH_MAXSLOTS+1]
 new bool:gPlayerPutInServer[SH_MAXSLOTS+1]
 new gXpBounsVIP
-new bool:gBlockedFirstHamSpawn[SH_MAXSLOTS+1]
 
 // Other miscellaneous global variables
 new gHelpHudMsg[340]
@@ -625,8 +636,8 @@ public plugin_init()
 	// Power Commands, using a loop so it adjusts with SH_MAXBINDPOWERS
 	for (new x = 1; x <= SH_MAXBINDPOWERS; x++) {
 		new powerDown[10], powerUp[10]
-		formatex(powerDown, 9, "+power%d", x)
-		formatex(powerUp, 9, "-power%d", x)
+		formatex(powerDown, charsmax(powerDown), "+power%d", x)
+		formatex(powerUp, charsmax(powerUp), "-power%d", x)
 
 		register_clcmd(powerDown, "powerKeyDown")
 		register_clcmd(powerUp, "powerKeyUp")
@@ -728,7 +739,7 @@ public fm_GetGameDesc()
 	if ( !get_pcvar_num(sv_superheros) ) return FMRES_IGNORED
 
 	new mod_name[9]
-	get_modname(mod_name, 8)
+	get_modname(mod_name, charsmax(mod_name))
 	if ( equal(mod_name, "cstrike") ) {
 		forward_return(FMV_STRING, "CS - SuperHero Mod")
 	}
@@ -752,7 +763,7 @@ public plugin_cfg()
 
 	// Setup the Admin Commands
 	new accessLevel[10]
-	get_pcvar_string(sh_adminaccess, accessLevel, 9)
+	get_pcvar_string(sh_adminaccess, accessLevel, charsmax(accessLevel))
 	new aLevel = read_flags(accessLevel)
 
 	//This can all be set with cmdaccess.ini now, do we really need a sh_adminaccess cvar?
@@ -795,21 +806,21 @@ public plugin_cfg()
 setupConfig()
 {
 	// Set Up Config Files
-	get_configsdir(gSHConfigDir, 127)
-	add(gSHConfigDir, 127, "/shero", 6)
+	get_configsdir(gSHConfigDir, charsmax(gSHConfigDir))
+	add(gSHConfigDir, charsmax(gSHConfigDir), "/shero", 6)
 
 	// Attempt to create directory if it does not exist
 	if ( !dir_exists(gSHConfigDir) ) {
 		mkdir(gSHConfigDir)
 	}
 
-	formatex(gBanFile, 127, "%s/nopowers.cfg", gSHConfigDir)
-	formatex(gSHConfig, 127, "%s/shconfig.cfg", gSHConfigDir)
+	formatex(gBanFile, charsmax(gBanFile), "%s/nopowers.cfg", gSHConfigDir)
+	formatex(gSHConfig, charsmax(gSHConfig), "%s/shconfig.cfg", gSHConfigDir)
 }
 //----------------------------------------------------------------------------------------------
 setupHelpMotd()
 {
-	formatex(gHelpMotd, 127, "%s/shmotd.txt", gSHConfigDir)
+	formatex(gHelpMotd, charsmax(gHelpMotd), "%s/shmotd.txt", gSHConfigDir)
 
 	if ( !file_exists(gHelpMotd) ) {
 		//Create the file if it doesn't exist
@@ -831,7 +842,7 @@ loadConfig()
 		//Force the server to flush the exec buffer
 		server_exec()
 
-		//Note: I do not believe this is an issue anymore disabling until known otherwise
+		//Note: I do not believe this is an issue anymore disabling until known otherwise - vittu
 		//Exec the config again due to issues with it not loading all the time
 		//server_cmd("exec %s", gSHConfig)
 	}
@@ -844,7 +855,7 @@ loadConfig()
 giveWeaponConfig()
 {
 	new wpnBlockFile[128]
-	formatex(wpnBlockFile, 127, "%s/shweapon.cfg", gSHConfigDir)
+	formatex(wpnBlockFile, charsmax(wpnBlockFile), "%s/shweapon.cfg", gSHConfigDir)
 
 	if ( !file_exists(wpnBlockFile) ) {
 		//Create the file if it doesn't exist
@@ -863,10 +874,10 @@ giveWeaponConfig()
 	new blockWeapons[512], weapon[16], weaponName[32]
 	new checkLength, x, weaponID
 
-	get_mapname(mapName, 31)
+	get_mapname(mapName, charsmax(mapName))
 
 	while(!feof(blockWpnFile)) {
-		fgets(blockWpnFile, data, 511)
+		fgets(blockWpnFile, data, charsmax(data))
 		trim(data)
 
 		//Comments or blank skip it
@@ -874,7 +885,7 @@ giveWeaponConfig()
 			case '^0', '^n', ';', '/', '\', '#': continue
 		}
 
-		strbreak(data, blockMapName, 31, blockWeapons, 511)
+		strbreak(data, blockMapName, charsmax(blockMapName), blockWeapons, charsmax(blockWeapons))
 
 		//all maps or check for something more specific?
 		if ( blockMapName[0] != '*' ) {
@@ -903,7 +914,7 @@ giveWeaponConfig()
 		while ( blockWeapons[0] != '^0' ) {
 			//trim any spaces left over especially from strtok
 			trim(blockWeapons)
-			strtok(blockWeapons, weapon, 15, blockWeapons, 415, ',', 1)
+			strtok(blockWeapons, weapon, charsmax(weapon), blockWeapons, 415, ',', 1)
 
 			if ( equal(weapon, "all") ) {
 				//Set all 1-30 CSW_ constants
@@ -913,7 +924,7 @@ giveWeaponConfig()
 			}
 			else {
 				//Set named weapon
-				formatex(weaponName, 31, "weapon_%s", weapon)
+				formatex(weaponName, charsmax(weaponName), "weapon_%s", weapon)
 				weaponID = get_weaponid(weaponName)
 
 				if ( !weaponID ) {
@@ -1104,9 +1115,9 @@ public _sh_chat_message()
 	if ( id < 0 || id > gServersMaxPlayers ) return
 	if ( is_user_bot(id) ) return
 
-	// Chat is 192(w/null) max, "[SH] " is 5 char min added to message
-	new output[187]
-	vdformat(output, sizeof(output)-1, 3, 4)
+	// Chat max is 191(w/null) to pass into it, "[SH] " is 5 char min added to message
+	new output[186]
+	vdformat(output, charsmax(output), 3, 4)
 
 	if ( output[0] == '^0' ) return
 
@@ -1132,7 +1143,7 @@ chatMessage(id, heroIndex = -1, const msg[], any:...)
 
 		if ( !index ) return
 
-		msgType = MSG_ALL
+		msgType = MSG_BROADCAST
 	}
 	else {
 		// Make sure this id is actually in the server
@@ -1143,10 +1154,10 @@ chatMessage(id, heroIndex = -1, const msg[], any:...)
 	}
 
 	// Now we build our message
-	static message[192], name[27]
-	new len, maxlen = 191
+	static message[191], heroName[27]
+	new len
 	message[0] = '^0'
-	name[0] = '^0'
+	heroName[0] = '^0'
 
 	// Set first bit
 	message[0] = 0x03 //Team colored
@@ -1154,12 +1165,13 @@ chatMessage(id, heroIndex = -1, const msg[], any:...)
 
 	// Do we need to set a hero name to the message
 	if ( -1 < heroIndex < gSuperHeroCount ) {
-		formatex(name, 26, "(%s)",  gSuperHeros[heroIndex][hero])
+		// Set hero name in parentheses
+		formatex(heroName, charsmax(heroName), "(%s)",  gSuperHeros[heroIndex][hero])
 	}
 
-	len += formatex(message[len], maxlen-len, "[SH]%s^x01 ", (name[0] == '^0') ? "" : name)
+	len += formatex(message[len], charsmax(message)-len, "[SH]%s^x01 ", (heroName[0] == '^0') ? "" : heroName)
 
-	vformat(message[len], maxlen-len, msg, 4)
+	vformat(message[len], charsmax(message)-len, msg, 4)
 
 	// Temporarily set teaminfo of player to send message from that player as if on the set team
 	// index is in server at this point
@@ -1194,7 +1206,7 @@ public _sh_debug_message()
 	new id = get_param(1)
 
 	new output[512]
-	vdformat(output, sizeof(output)-1, 3, 4)
+	vdformat(output, charsmax(output), 3, 4)
 
 	if ( output[0] == '^0' ) return
 
@@ -1206,18 +1218,18 @@ debugMsg(id, level, const message[], any:...)
 	if ( get_pcvar_num(sh_debug_messages) < level && level != 0 ) return
 
 	new output[512]
-	vformat(output, sizeof(output)-1, message, 4)
+	vformat(output, charsmax(output), message, 4)
 
 	if ( output[0] == '^0' ) return
 
 	if ( 0 < id <= gServersMaxPlayers ) {
 		new name[32], userid, authid[32], team[32]
-		get_user_name(id, name, 31)
+		get_user_name(id, name,  charsmax(name))
 		userid = get_user_userid(id)
-		get_user_authid(id, authid, 31)
-		get_user_team(id, team, 31)
-		if ( equal(team, "UNASSIGNED") ) copy(team, 31, "")
-		if ( userid > 0 ) format(output, 511, "^"%s<%d><%s><%s>^" %s", name, userid, authid, team, output)
+		get_user_authid(id, authid,  charsmax(authid))
+		get_user_team(id, team,  charsmax(team))
+		if ( equal(team, "UNASSIGNED") ) copy(team, charsmax(team), "")
+		if ( userid > 0 ) format(output, charsmax(output), "^"%s<%d><%s><%s>^" %s", name, userid, authid, team, output)
 	}
 
 	log_amx("DEBUG: %s", output)
@@ -1227,7 +1239,7 @@ debugMsg(id, level, const message[], any:...)
 public _sh_get_hero_id()
 {
 	new pHero[25]
-	get_string(1, pHero, 24)
+	get_string(1, pHero, charsmax(pHero))
 
 	return getHeroID(pHero)
 }
@@ -1312,7 +1324,7 @@ dropWeapon(id, weaponID, bool:remove)
 
 		static weaponName[32]
 
-		get_weaponname(weaponID, weaponName, 31)
+		get_weaponname(weaponID, weaponName, charsmax(weaponName))
 
 		engclient_cmd(id, "drop", weaponName)
 
@@ -1371,7 +1383,7 @@ giveWeapon(id, weaponID, bool:switchTo)
 
 	if ( !user_has_weapon(id, weaponID) ) {
 		static weaponName[32]
-		get_weaponname(weaponID, weaponName, 31)
+		get_weaponname(weaponID, weaponName, charsmax(weaponName))
 
 		new itemID = give_item(id, weaponName)
 
@@ -1394,7 +1406,7 @@ public _sh_give_item()
 	if ( !is_user_alive(id) ) return 0
 
 	new itemName[32], itemID
-	get_array(2, itemName, 31)
+	get_array(2, itemName, charsmax(itemName))
 
 	if ( equal(itemName, "weapon", 6) )
 	{
@@ -1423,7 +1435,7 @@ public _sh_create_hero()
 {
 	//Heroes Name
 	new pHero[25]
-	get_string(1, pHero, 24)	
+	get_string(1, pHero, charsmax(pHero))	
 
 	// Add Hero to Big Array!
 	if ( gSuperHeroCount >= SH_MAXHEROS ) {
@@ -1454,8 +1466,8 @@ public _sh_set_hero_info()
 	if ( heroIndex < 0 || heroIndex >= gSuperHeroCount ) return
 
 	new pPower[50], pHelp[128]
-	get_string(2, pPower, 49)		//Short Power Description
-	get_string(3, pHelp, 127)		//Help Info
+	get_string(2, pPower, charsmax(pPower))		//Short Power Description
+	get_string(3, pHelp, charsmax(pHelp))		//Help Info
 
 	debugMsg(0, 3, "Create Hero-> HeroID: %d - %s - %s", heroIndex, pPower, pHelp)
 
@@ -1607,10 +1619,10 @@ public _sh_set_hero_speed()
 		//Set up the weapon string for the debug message
 		new weapons[32], number[3], x
 		for ( x = 0; x < numWpns; x++ ) {
-			formatex(number, 2, "%d", pWeapons[x])
-			add(weapons, 31, number)
+			formatex(number, charsmax(number), "%d", pWeapons[x])
+			add(weapons, charsmax(weapons), number)
 			if ( pWeapons[x+1] != '^0' ) {
-				add(weapons, 31, ",")
+				add(weapons, charsmax(weapons), ",")
 			}
 			else break
 		}
@@ -1619,7 +1631,7 @@ public _sh_set_hero_speed()
 	}
 
 	gHeroMaxSpeed[heroIndex] = pcvarSpeed // pCVAR expected!
-	copy(gHeroSpeedWeapons[heroIndex], 31, pWeapons) // Array expected!
+	copy(gHeroSpeedWeapons[heroIndex], charsmax(gHeroSpeedWeapons[]), pWeapons) // Array expected!
 }
 //----------------------------------------------------------------------------------------------
 //native sh_set_hero_grav(heroID, pcvarGravity, const weapons[] = {0}, numofwpns = 1)
@@ -1640,10 +1652,10 @@ public _sh_set_hero_grav()
 		//Set up the weapon string for the debug message
 		new weapons[32], number[3], x
 		for ( x = 0; x < numWpns; x++ ) {
-			formatex(number, 2, "%d", pWeapons[x])
-			add(weapons, 31, number)
+			formatex(number, charsmax(number), "%d", pWeapons[x])
+			add(weapons, charsmax(weapons), number)
 			if ( pWeapons[x+1] != '^0' ) {
-				add(weapons, 31, ",")
+				add(weapons, charsmax(weapons), ",")
 			}
 			else break
 		}
@@ -1652,7 +1664,7 @@ public _sh_set_hero_grav()
 	}
 
 	gHeroMinGravity[heroIndex] = pcvarGravity // pCVAR expected!
-	//copy(gHeroGravityWeapons[heroIndex], 31, pWeapons) // Array expected!
+	//copy(gHeroGravityWeapons[heroIndex], charsmax(gHeroGravityWeapons[]), pWeapons) // Array expected!
 }
 //----------------------------------------------------------------------------------------------
 Float:getMaxSpeed(id, weapon)
@@ -1897,8 +1909,8 @@ menuSuperPowers(id, menuOffset)
 	}
 
 	// show menu super power
-	new message[1801]
-	new temp[128]
+	new message[800]
+	new temp[90]
 	new keys = 0
 
 	//menuOffset Stuff
@@ -1906,40 +1918,40 @@ menuSuperPowers(id, menuOffset)
 	gPlayerMenuOffset[id] = menuOffset
 
 	new total = min(gMaxPowers, playerLevel)
-	formatex(message, 180, "\ySelect Super Power:%-16s\r(You've Selected %d/%d)^n^n", " ", playerpowercount, total)
+	formatex(message, 68, "\ySelect Super Power:%-16s\r(You've Selected %d/%d)^n^n", " ", playerpowercount, total)
 
 	// OK Display the Menu
 	for ( new x = menuOffset; x < menuOffset + 8; x++ ) {
 		// Only allow a selection from powers the player doesn't have
 		if ( x > gPlayerMenuChoices[id][0] ) {
-			add(message, 1800, "^n")
+			add(message, charsmax(message), "^n")
 			continue
 		}
 		heroIndex = gPlayerMenuChoices[id][x]
 		heroLevel = getHeroLevel(heroIndex)
 		if ( gMaxPowersLeft[id][heroLevel] <= 0 || (gPlayerBinds[id][0] >= MaxBinds && gSuperHeros[heroIndex][requiresKeys]) ) {
-			add(message,1800,"\d")
+			add(message,charsmax(message),"\d")
 		}
 		else {
-			add(message,1800,"\w")
+			add(message,charsmax(message),"\w")
 		}
 		keys |= (1<<x-menuOffset) // enable this option
-		formatex(temp, 127, "%s (%d%s)", gSuperHeros[heroIndex][hero], heroLevel, gSuperHeros[heroIndex][requiresKeys] ? "b" : "")
-		format(temp, 127, "%d. %-20s- %s^n", x - menuOffset + 1, temp, gSuperHeros[heroIndex][superpower])
-		add(message, 1800, temp)
+		formatex(temp, charsmax(temp), "%s (%d%s)", gSuperHeros[heroIndex][hero], heroLevel, gSuperHeros[heroIndex][requiresKeys] ? "b" : "")
+		format(temp, charsmax(temp), "%d. %-20s- %s^n", x - menuOffset + 1, temp, gSuperHeros[heroIndex][superpower])
+		add(message, charsmax(message), temp)
 	}
 
 	if ( gPlayerMenuChoices[id][0] > 8 ) {
 		// Can only Display 8 heroes at a time
-		add(message, 1800, "\w^n9. More Heroes")
+		add(message, charsmax(message), "\w^n9. More Heroes")
 		keys |= MENU_KEY_9
 	}
 	else {
-		add(message, 1800, "^n")
+		add(message, charsmax(message), "^n")
 	}
 
 	// Cancel
-	add(message, 1800, "\w^n0. Cancel")
+	add(message, charsmax(message), "\w^n0. Cancel")
 	keys |= MENU_KEY_0
 
 	if ( (count > 0 && enabled > 0) || gInMenu[id] ) {
@@ -1999,15 +2011,15 @@ public selectedSuperPower(id, key)
 
 	new message[256]
 	if ( !gSuperHeros[heroIndex][requiresKeys] ) {
-		formatex(message, 256, "AUTOMATIC POWER: %s^n%s", gSuperHeros[heroIndex][superpower], gSuperHeros[heroIndex][help])
+		formatex(message, charsmax(message), "AUTOMATIC POWER: %s^n%s", gSuperHeros[heroIndex][superpower], gSuperHeros[heroIndex][help])
 	}
 	else {
-		formatex(message, 256, "BIND KEY TO ^"+POWER%d^": %s^n%s", gPlayerBinds[id][0]+1, gSuperHeros[heroIndex][superpower], gSuperHeros[heroIndex][help])
+		formatex(message, charsmax(message), "BIND KEY TO ^"+POWER%d^": %s^n%s", gPlayerBinds[id][0]+1, gSuperHeros[heroIndex][superpower], gSuperHeros[heroIndex][help])
 	}
 
 	// Show the Hero Picked
 	set_hudmessage(100, 100, 0, -1.0, 0.2, 0, 1.0, 5.0, 0.1, 0.2, -1)
-	ShowSyncHudMsg(id, gHeroHudSync, message)
+	ShowSyncHudMsg(id, gHeroHudSync, "%s", message)
 
 	// Bind Keys / Set Powers
 	gPlayerPowers[id][0] = playerpowercount + 1
@@ -2109,12 +2121,12 @@ public ham_PlayerSpawn(id)
 {
 	if ( !get_pcvar_num(sv_superheros) ) return HAM_IGNORED
 
-	//Block the first Ham_Spawn call. It is from the player entity being created.
-	//The player is not alive, however bots will pass the alive check.
-	if ( !gBlockedFirstHamSpawn[id] ) {
-		gBlockedFirstHamSpawn[id] = true
-		return HAM_IGNORED
-	}
+	// The very first Ham_Spawn on a user will happen when he is
+	// created, this user is not spawned alive into the game.
+	// Alive check will block first Ham_Spawn call for clients.
+	// Team check will block first Ham_Spawn call for bots. (bots pass alive check)
+	if ( !is_user_alive(id) ) return HAM_IGNORED
+	if ( cs_get_user_team(id) == CS_TEAM_UNASSIGNED ) return HAM_IGNORED
 
 	//Prevents non-saved XP servers from having loading issues
 	if ( !gLongTermXP ) gReadXPNextRound[id] = false
@@ -2123,19 +2135,10 @@ public ham_PlayerSpawn(id)
 	//It is up to the hero to set the variable back to false
 	remove_task(id+SH_COOLDOWN_TASKID, 1)		// 1 = look outside this plugin
 
-	//User needs to be connected from here on
-	if ( !is_user_connected(id) ) return HAM_IGNORED
-
 	//Sets the stun and god timers back to normal
 	gPlayerStunTimer[id] = -1
 	gPlayerGodTimer[id] = -1
 	set_user_godmode(id, 0)
-
-	//User also needs to be alive from here on
-	if ( !is_user_alive(id) ) {
-		displayPowers(id, false)
-		return HAM_IGNORED
-	}
 
 	//These must be checked here to set the max variables correctly
 	getMaxHealth(id)
@@ -2188,8 +2191,8 @@ public ham_PlayerSpawn(id)
 	//Display the XP and bind powers to their screen
 	displayPowers(id, true)
 
-	//Shows menu if the person is not in it already and on a team
-	if ( !gInMenu[id] && cs_get_user_team(id) != CS_TEAM_UNASSIGNED && (is_user_bot(id) || !(gPlayerFlags[id] & SH_FLAG_NOAUTOMENU)) ) {
+	//Shows menu if the person is not in it already, always show for bots to choose powers
+	if ( !gInMenu[id] && (is_user_bot(id) || !(gPlayerFlags[id] & SH_FLAG_NOAUTOMENU)) ) {
 		menuSuperPowers(id, gPlayerMenuOffset[id])
 	}
 
@@ -2305,8 +2308,8 @@ public powerKeyDown(id)
 {
 	if ( !get_pcvar_num(sv_superheros) || !is_user_connected(id) ) return PLUGIN_HANDLED
 
-	new cmd[12],whichKey
-	read_argv(0,cmd,11)
+	new cmd[12], whichKey
+	read_argv(0, cmd, charsmax(cmd))
 	whichKey = str_to_num(cmd[6])
 
 	if ( whichKey > SH_MAXBINDPOWERS || whichKey <= 0 ) return PLUGIN_CONTINUE
@@ -2360,7 +2363,7 @@ public powerKeyUp(id)
 	if ( !get_pcvar_num(sv_superheros) || !is_user_connected(id) ) return PLUGIN_HANDLED
 
 	new cmd[12], whichKey
-	read_argv(0, cmd, 11)
+	read_argv(0, cmd, charsmax(cmd))
 	whichKey = str_to_num(cmd[6])
 
 	if ( whichKey > SH_MAXBINDPOWERS || whichKey <= 0 ) return PLUGIN_CONTINUE
@@ -2638,10 +2641,10 @@ displayPowers(id, bool:setThePowers)
 	playerLevel = gPlayerLevel[id]
 
 	if ( playerLevel < gNumLevels ) {
-		formatex(message, 63, "LVL:%d/%d XP:(%d/%d)", playerLevel, gNumLevels, gPlayerXP[id], gXPLevel[playerLevel+1])
+		formatex(message, charsmax(message), "LVL:%d/%d XP:(%d/%d)", playerLevel, gNumLevels, gPlayerXP[id], gXPLevel[playerLevel+1])
 	}
 	else {
-		formatex(message, 63, "LVL:%d/%d XP:(%d)", playerLevel, gNumLevels, gPlayerXP[id])
+		formatex(message, charsmax(message), "LVL:%d/%d XP:(%d)", playerLevel, gNumLevels, gPlayerXP[id])
 	}
 
 	//Resets All Bind assignments
@@ -2660,9 +2663,9 @@ displayPowers(id, bool:setThePowers)
 			if ( gSuperHeros[heroIndex][requiresKeys] ) {
 				count++
 				if (count <= 3) {
-					if ( message[0] != '^0') add(message, 63, " ")
-					formatex(temp, 63, "%d=%s", count, gSuperHeros[heroIndex])
-					add(message, 63, temp)
+					if ( message[0] != '^0') add(message, charsmax(message), " ")
+					formatex(temp, charsmax(temp), "%d=%s", count, gSuperHeros[heroIndex])
+					add(message, charsmax(message), temp)
 				}
 				// Make sure this players keys are bound correctly
 				if ( count <= get_pcvar_num(sh_maxbinds) && count <= SH_MAXBINDPOWERS ) {
@@ -2827,27 +2830,23 @@ public _sh_extra_damage()
 		if ( !kill ) return
 
 		new wpnDescription[32]
-		get_string(4, wpnDescription, 31)
+		get_string(4, wpnDescription, charsmax(wpnDescription))
 
 		// Kill the victim and block the message
 		set_msg_block(gmsgScoreInfo, BLOCK_ONCE)
 
 		gXrtaDmgClientKill = true
 		// Save info to change HUD death message and send forward with correct info
-		copy(gXrtaDmgWpnName, 31, wpnDescription)
+		copy(gXrtaDmgWpnName, charsmax(gXrtaDmgWpnName), wpnDescription)
 		gXrtaDmgAttacker = attacker
 		gXrtaDmgHeadshot = headshot
 		// Kill the victim
+		// pev_dmg_inflictor not set becase this will be self even if we did set it
 		dllfunc(DLLFunc_ClientKill, victim)
 		gXrtaDmgClientKill = false
 
 		// Log the Kill
 		logKill(attacker, victim, wpnDescription)
-
-		// External plugins might use this, ie atac 3
-		// This should be set to the entity that caused the
-		// damage, but lets just set it to attacker for now
-		set_pev(victim, pev_dmg_inflictor, attacker)
 
 		// Make camera turn toward attacker on death, thx Emp`
 		set_pev(victim, pev_iuser3, attacker)
@@ -2889,7 +2888,7 @@ public _sh_extra_damage()
 			//new bool:dmgFFmsg = get_param(6) ? true : false
 			if ( get_param(8) ) {
 				new name[32]
-				get_user_name(attacker, name, 31)
+				get_user_name(attacker, name, charsmax(name))
 				client_print(0, print_chat, "%s attacked a teammate", name)
 			}
 		}
@@ -2953,15 +2952,15 @@ logKill(id, victim, const weaponDescription[32])
 	new namea[32], namev[32], authida[32], authidv[32], teama[16], teamv[16]
 
 	// Info On Attacker
-	get_user_name(id, namea, 31)
-	get_user_team(id, teama, 15)
-	get_user_authid(id, authida, 31)
+	get_user_name(id, namea, charsmax(namea))
+	get_user_team(id, teama, charsmax(teama))
+	get_user_authid(id, authida, charsmax(authida))
 	new auserid = get_user_userid(id)
 
 	// Info On Victim
-	get_user_name(victim, namev, 31)
-	get_user_team(victim, teamv, 15)
-	get_user_authid(victim, authidv, 31)
+	get_user_name(victim, namev, charsmax(namev))
+	get_user_team(victim, teamv, charsmax(teamv))
+	get_user_authid(victim, authidv, charsmax(authidv))
 
 	// Log This Kill
 	if ( id != victim ) {
@@ -2984,12 +2983,12 @@ public msg_DeathMsg()
 	if ( !gXrtaDmgClientKill ) {
 		attacker = get_msg_arg_int(1)
 		headshot = get_msg_arg_int(3)
-		get_msg_arg_string(4, wpnDescription, 31)
+		get_msg_arg_string(4, wpnDescription, charsmax(wpnDescription))
 	}
 	else {
 		attacker = gXrtaDmgAttacker
 		headshot = gXrtaDmgHeadshot
-		copy(wpnDescription, 31, gXrtaDmgWpnName)
+		copy(wpnDescription, charsmax(wpnDescription), gXrtaDmgWpnName)
 
 		// Change HUD death message to show extradamage kill correctly
 		set_msg_arg_int(1, ARG_BYTE, attacker)
@@ -3009,7 +3008,7 @@ public event_DeathMsg()
 	new killer = read_data(1)
 	new victim = read_data(2)
 
-	// Kill by extra damage will be skipped here since killer is 0=world
+	// Kill by extra damage will be skipped here since killer is self
 	if ( killer && killer != victim && victim ) {
 
 		if ( cs_get_user_team(killer) == cs_get_user_team(victim) ) {
@@ -3069,7 +3068,7 @@ public _sh_reload_ammo()
 
 			new iWPNidx = -1
 			new wpn[32]
-			get_weaponname(wpnid, wpn, 31)
+			get_weaponname(wpnid, wpn, charsmax(wpn))
 
 			while ( (iWPNidx = engfunc(EngFunc_FindEntityByString, iWPNidx, "classname", wpn)) != 0 ) {
 				if (id == pev(iWPNidx, pev_owner)) {
@@ -3095,7 +3094,7 @@ public _sh_reload_ammo()
 			if ( wpnid == CSW_M4A1 || wpnid == CSW_USP ) {
 				new iWPNidx = -1
 				new wpn[32]
-				get_weaponname(wpnid, wpn, 31)
+				get_weaponname(wpnid, wpn, charsmax(wpn))
 				while ( (iWPNidx = engfunc(EngFunc_FindEntityByString, iWPNidx, "classname", wpn)) != 0 ) {
 					if (id == pev(iWPNidx, pev_owner)) {
 						idSilence = cs_get_weapon_silen(iWPNidx)
@@ -3106,7 +3105,7 @@ public _sh_reload_ammo()
 			else if ( wpnid == CSW_FAMAS || wpnid == CSW_GLOCK18 ) {
 				new iWPNidx = -1
 				new wpn[32]
-				get_weaponname(wpnid, wpn, 31)
+				get_weaponname(wpnid, wpn, charsmax(wpn))
 				while ( (iWPNidx = engfunc(EngFunc_FindEntityByString, iWPNidx, "classname", wpn)) != 0 ) {
 					if (id == pev(iWPNidx, pev_owner)) {
 						idBurst = cs_get_weapon_burst(iWPNidx)
@@ -3223,7 +3222,7 @@ public _sh_set_godmode()
 public cl_say(id)
 {
 	static said[192]
-	read_args(said, 191)
+	read_args(said, charsmax(said))
 	remove_quotes(said)
 
 	if ( !get_pcvar_num(sv_superheros) ) {
@@ -3301,12 +3300,6 @@ public cl_say(id)
 		gPlayerFlags[id] &= ~SH_FLAG_HUDHELP
 		return PLUGIN_HANDLED
 	}
-	else if ( equali(said[pos], "savexp") ) {
-		chatMessage(id, _, "Your XP will be saved automatically, that command is useless")
-		localAddXP(id, -gXPGiven[0])
-		displayPowers(id, false)
-		return PLUGIN_HANDLED
-	}
 	else if ( containi(said, "powers") != -1 || containi(said, "superhero") != -1 ) {
 		chatMessage(id, _, "For help with SuperHero Mod, say: /help")
 		return PLUGIN_CONTINUE
@@ -3326,9 +3319,9 @@ dropPower(id, const said[])
 	new heroIndex
 	new bool:found = false
 
-	new spaceIdx = contain(said, " " )
+	new spaceIdx = contain(said, " ")
 	if ( spaceIdx > 0 && strlen(said) > spaceIdx+2 ) {
-		copy(heroName, 31, said[spaceIdx+1] )
+		copy(heroName, charsmax(heroName), said[spaceIdx+1] )
 	}
 	else {
 		chatMessage(id, _, "Please provide at least two letters from the hero name you wish to drop")
@@ -3372,20 +3365,19 @@ showHeroList(id)
 {
 	if ( !get_pcvar_num(sv_superheros) ) return
 
-	new len = 1500
 	new buffer[1501]
 	new n = 0
 
-	n += copy(buffer[n],len-n,"<html><head><style type=^"text/css^">pre{color:#FFB000;}body{background:#000000;margin-left:8px;margin-top:0px;}</style></head><body><pre>^n")
+	n += copy(buffer[n], charsmax(buffer)-n, "<html><head><style type=^"text/css^">pre{color:#FFB000;}body{background:#000000;margin-left:8px;margin-top:0px;}</style></head><body><pre>^n")
 
-	n += copy(buffer[n],len-n,"TIP: Use ^"herolist^" in the console for better output and searchability.^n^n")
-	n += copy(buffer[n],len-n,"Installed Heroes:^n^n")
+	n += copy(buffer[n], charsmax(buffer)-n, "TIP: Use ^"herolist^" in the console for better output and searchability.^n^n")
+	n += copy(buffer[n], charsmax(buffer)-n, "Installed Heroes:^n^n")
 
 	for (new x = 0; x < gSuperHeroCount; x++ ) {
-		n += formatex(buffer[n],len-n, "%s (%d%s) - %s^n", gSuperHeros[x][hero], getHeroLevel(x), gSuperHeros[x][requiresKeys] ? "b" : "", gSuperHeros[x][superpower])
+		n += formatex(buffer[n], charsmax(buffer)-n, "%s (%d%s) - %s^n", gSuperHeros[x][hero], getHeroLevel(x), gSuperHeros[x][requiresKeys] ? "b" : "", gSuperHeros[x][superpower])
 	}
 
-	n += copy(buffer[n], len-n, "</pre></body></html>")
+	copy(buffer[n], charsmax(buffer)-n, "</pre></body></html>")
 
 	show_motd(id, buffer, "SuperHero List")
 }
@@ -3395,26 +3387,26 @@ showPlayerLevels(id, say, said[])
 	if ( !get_pcvar_num(sv_superheros) ) return
 
 	new playerCount
-	new players[SH_MAXSLOTS], name[32]
+	new players[SH_MAXSLOTS]
 
 	if ( equal(said, "") ) copy(said, 30, "@ALL")
 
-	new len = 1500
 	new buffer[1501]
 	new n = 0
 
 	if ( say == 1 ) {
-		n += copy(buffer[n],len-n,"<html><head><style type=^"text/css^">pre{color:#FFB000;}body{background:#000000;margin-left:8px;margin-top:0px;}</style></head><body><pre>^n")
-		n += copy(buffer[n],len-n,"Player Levels:^n^n")
+		n += copy(buffer[n], charsmax(buffer)-n,"<html><head><style type=^"text/css^">pre{color:#FFB000;}body{background:#000000;margin-left:8px;margin-top:0px;}</style></head><body><pre>^n")
+		n += copy(buffer[n], charsmax(buffer)-n,"Player Levels:^n^n")
 	}
 	else {
-		console_print(id,"Player Levels:^n")
+		console_print(id, "Player Levels:^n")
 	}
 
 	if ( said[0] == '@' ) {
 		if ( equali("T", said[1]) ) {
 			copy(said[1], 31, "TERRORIST")
 		}
+
 		if ( equali("ALL", said[1]) ) {
 			get_players(players, playerCount)
 		}
@@ -3432,20 +3424,20 @@ showPlayerLevels(id, say, said[])
 		playerCount = 1
 	}
 
-	new pid, teamName[5]
+	new pid, teamName[5], name[32]
 	for ( new team = 2; team >= 0; team-- ) {
 		for ( new x = 0; x < playerCount; x++ ) {
 			pid = players[x]
 			if ( get_user_team(pid) != team ) continue
-			get_user_name(pid, name, 31)
+			get_user_name(pid, name, charsmax(name))
 
 			teamName[0] = '^0'
-			if ( get_user_team(pid) == 1 ) copy(teamName, 4, "T :")
-			else if ( get_user_team(pid) == 2 ) copy(teamName, 4, "CT:")
-			else copy(teamName, 4, "S :")
+			if ( get_user_team(pid) == 1 ) copy(teamName, charsmax(teamName), "T :")
+			else if ( get_user_team(pid) == 2 ) copy(teamName, charsmax(teamName), "CT:")
+			else copy(teamName, charsmax(teamName), "S :")
 
 			if ( say == 1 ) {
-				n += formatex(buffer[n], len-n, "%s%-24s (Level %d)(XP = %d)^n", teamName, name, gPlayerLevel[pid], gPlayerXP[pid])
+				n += formatex(buffer[n], charsmax(buffer)-n, "%s%-24s (Level %d)(XP = %d)^n", teamName, name, gPlayerLevel[pid], gPlayerXP[pid])
 			}
 			else {
 				console_print(id, "%s%-24s (Level %d)(XP = %d)", teamName, name, gPlayerLevel[pid], gPlayerXP[pid])
@@ -3454,7 +3446,7 @@ showPlayerLevels(id, say, said[])
 	}
 
 	if ( say == 1 ) {
-		n += copy(buffer[n], len-n, "</pre></body></html>")
+		copy(buffer[n], charsmax(buffer)-n, "</pre></body></html>")
 
 		show_motd(id, buffer, "Players SuperHero Levels")
 	}
@@ -3473,16 +3465,15 @@ showPlayerSkills(id, say, said[])
 
 	if ( equal(said,"") ) copy(said, 31, "@ALL")
 
-	new len = 1500
 	new buffer[1501]
 	new n = 0
-	new tn = 0, tlen = 511
+	new tn = 0
 	new temp[512]
 
 	if ( say == 1 ) {
-		n += copy(buffer[n],len-n,"<html><head><style type=^"text/css^">pre{color:#FFB000;}body{background:#000000;margin-left:8px;margin-top:0px;}</style></head><body><pre>^n")
+		n += copy(buffer[n], charsmax(buffer)-n,"<html><head><style type=^"text/css^">pre{color:#FFB000;}body{background:#000000;margin-left:8px;margin-top:0px;}</style></head><body><pre>^n")
 
-		n += copy(buffer[n],len-n,"Player Skills:^n^n")
+		n += copy(buffer[n], charsmax(buffer)-n,"Player Skills:^n^n")
 	}
 	else {
 		console_print(id, "Player Skills:^n")
@@ -3490,7 +3481,7 @@ showPlayerSkills(id, say, said[])
 
 	if ( said[0] == '@' ) {
 		if (equali("T",said[1])) {
-			copy(said[1],31,"TERRORIST")
+			copy(said[1], 31,"TERRORIST")
 		}
 		if ( equali("ALL", said[1]) ) {
 			get_players(players, playerCount)
@@ -3515,49 +3506,49 @@ showPlayerSkills(id, say, said[])
 			tn = 0
 			pid = players[x]
 			if ( get_user_team(pid) != team) continue
-			get_user_name(pid, name, 31)
+			get_user_name(pid, name, charsmax(name))
 			teamName[0] = '^0'
-			if ( get_user_team(pid) == 1 ) copy(teamName, 4, "T :")
-			else if ( get_user_team(pid) == 2 ) copy(teamName, 4, "CT:")
-			else copy(teamName, 4, "S: ")
-			tn += formatex(temp[tn], tlen-tn, "%s%-24s (Level %d)(XP = %d)", teamName, name, gPlayerLevel[pid], gPlayerXP[pid])
+			if ( get_user_team(pid) == 1 ) copy(teamName, charsmax(teamName), "T :")
+			else if ( get_user_team(pid) == 2 ) copy(teamName, charsmax(teamName), "CT:")
+			else copy(teamName, charsmax(teamName), "S: ")
+			tn += formatex(temp[tn], charsmax(temp)-tn, "%s%-24s (Level %d)(XP = %d)", teamName, name, gPlayerLevel[pid], gPlayerXP[pid])
 			if (say == 0) {
-				console_print(id, temp)
+				console_print(id, "%s", temp)
 				tn = 0
-				tn += copy(temp[tn], tlen-tn, "   ")
+				tn += copy(temp[tn], charsmax(temp)-tn, "   ")
 			}
 			playerpowercount = getPowerCount(pid)
 			for ( idx = 1; idx <= playerpowercount; idx++ ) {
 				heroIndex = gPlayerPowers[pid][idx]
-				tn += formatex(temp[tn], tlen-tn, "| %s ", gSuperHeros[heroIndex][hero])
+				tn += formatex(temp[tn], charsmax(temp)-tn, "| %s ", gSuperHeros[heroIndex][hero])
 				if ( idx % 6 == 0 ) {
 					if (say == 1) {
-						tn += copy(temp[tn], tlen-tn, "|^n   ")
+						tn += copy(temp[tn], charsmax(temp)-tn, "|^n   ")
 					}
 					else {
-						tn += copy(temp[tn], tlen-tn, "|")
-						console_print(id, temp)
+						tn += copy(temp[tn], charsmax(temp)-tn, "|")
+						console_print(id, "%s", temp)
 						tn = 0
-						tn += copy(temp[tn], tlen-tn, "   ")
+						tn += copy(temp[tn], charsmax(temp)-tn, "   ")
 					}
 				}
 			}
 
 			if (say == 1) {
-				tn += copy(temp[tn], tlen-tn, "^n^n")
-				n += copy(buffer[n], len-n, temp)
+				copy(temp[tn], charsmax(temp)-tn, "^n^n")
+				n += copy(buffer[n], charsmax(buffer)-n, temp)
 			}
 			else {
 				if ( gPlayerPowers[pid][0] > 0 ) {
-					tn += copy(temp[tn], tlen-tn, "|")
+					copy(temp[tn], charsmax(temp)-tn, "|")
 				}
-				console_print(id,temp)
+				console_print(id, "%s", temp)
 			}
 		}
 	}
 
 	if ( say == 1 ) {
-		n += copy(buffer[n],len-n,"</pre></body></html>")
+		copy(buffer[n], charsmax(buffer)-n,"</pre></body></html>")
 
 		show_motd(id, buffer, "Players SuperHero Skills")
 	}
@@ -3570,14 +3561,9 @@ showWhoHas(id, say, said[])
 {
 	if ( !get_pcvar_num(sv_superheros) ) return
 
-	new playerCount
-	new players[SH_MAXSLOTS]
-	new name[32], who[25]
-	copy(who, 24, said)
+	new who[25]
+	copy(who, charsmax(who), said)
 
-	new len = 1500
-	new buffer[1501]
-	new n = 0
 	new heroIndex = -1
 
 	for ( new i = 0; i < gSuperHeroCount; i++ ) {
@@ -3597,39 +3583,42 @@ showWhoHas(id, say, said[])
 		return
 	}
 
+	new buffer[1501], n
+
 	if ( say == 1 ) {
-		n += copy(buffer[n],len-n,"<html><head><style type=^"text/css^">pre{color:#FFB000;}body{background:#000000;margin-left:8px;margin-top:0px;}</style></head><body><pre>^n")
+		n += copy(buffer[n], charsmax(buffer)-n,"<html><head><style type=^"text/css^">pre{color:#FFB000;}body{background:#000000;margin-left:8px;margin-top:0px;}</style></head><body><pre>^n")
 	}
 
-	n += formatex(buffer[n], len-n, "WhoHas: %s^n^n", gSuperHeros[heroIndex][hero])
+	n += formatex(buffer[n], charsmax(buffer)-n, "WhoHas: %s^n^n", gSuperHeros[heroIndex][hero])
 
 	// Get a List of Players
+	new players[SH_MAXSLOTS], playerCount
 	get_players(players, playerCount)
 
-	new pid, teamName[5]
+	new pid, teamName[5], name[32]
 	for ( new team = 2; team >= 0; team-- ) {
 		for (new x = 0; x < playerCount; x++) {
 			pid = players[x]
 			if ( get_user_team(pid) != team) continue
-			get_user_name(pid, name, 31)
+			get_user_name(pid, name, charsmax(name))
 			teamName[0] = '^0'
 			if (!playerHasPower(pid, heroIndex)) continue
-			if ( get_user_team(pid) == 1 ) copy(teamName,4,"T :")
-			else if ( get_user_team(pid) == 2 ) copy(teamName,4,"CT:")
-			else copy(teamName,4,"S: ")
-			n += formatex(buffer[n],len-n,"%s%-24s (Level %d)(XP = %d)^n", teamName, name, gPlayerLevel[pid], gPlayerXP[pid] )
+			if ( get_user_team(pid) == 1 ) copy(teamName, charsmax(teamName), "T :")
+			else if ( get_user_team(pid) == 2 ) copy(teamName, charsmax(teamName), "CT:")
+			else copy(teamName, charsmax(teamName), "S: ")
+			n += formatex(buffer[n], charsmax(buffer)-n, "%s%-24s (Level %d)(XP = %d)^n", teamName, name, gPlayerLevel[pid], gPlayerXP[pid])
 		}
 	}
 
 	if ( say == 1 ) {
-		n += copy(buffer[n],len-n,"</pre></body></html>")
+		copy(buffer[n], charsmax(buffer)-n,"</pre></body></html>")
 
 		new title[32]
-		formatex(title, 31, "SuperHero WhoHas: %s", who)
+		formatex(title, charsmax(title), "SuperHero WhoHas: %s", who)
 		show_motd(id, buffer, title)
 	}
 	else {
-		console_print(id, buffer)
+		console_print(id, "%s", buffer)
 	}
 }
 //----------------------------------------------------------------------------------------------
@@ -3648,9 +3637,8 @@ public adminSetLevel(id, level, cid)
 		return PLUGIN_HANDLED
 	}
 
-	new arg[32], arg2[4]
-	read_argv(1, arg, 31)
-	read_argv(2, arg2, 3)
+	new arg2[4]
+	read_argv(2, arg2, charsmax(arg2))
 
 	if ( !isdigit(arg2[0]) ) {
 		console_print(id, "[SH] Second argument must be a XP level.")
@@ -3665,15 +3653,19 @@ public adminSetLevel(id, level, cid)
 		return PLUGIN_HANDLED
 	}
 
+	new arg[32]
+	read_argv(1, arg, charsmax(arg))
+
 	new authid2[32], name2[32]
-	get_user_name(id, name2, 31)
-	get_user_authid(id, authid2, 31)
+	get_user_name(id, name2, charsmax(name2))
+	get_user_authid(id, authid2, charsmax(authid2))
 
 	if ( arg[0] == '@' ) {
-		new players[32], inum
+		new players[SH_MAXSLOTS], inum
 		if ( equali("T", arg[1]) ) {
-			copy(arg[1], 31, "TERRORIST")
+			copy(arg[1], charsmax(arg)-1, "TERRORIST")
 		}
+
 		if ( equali("ALL", arg[1]) ) {
 			get_players(players, inum)
 		}
@@ -3707,8 +3699,8 @@ public adminSetLevel(id, level, cid)
 		displayPowers(player, false)
 
 		new name[32], authid[32]
-		get_user_name(player, name, 31)
-		get_user_authid(player, authid, 31)
+		get_user_name(player, name, charsmax(name))
+		get_user_authid(player, authid, charsmax(authid))
 
 		show_activity(id, name2, "set level %d on %s", setlevel, name)
 
@@ -3736,7 +3728,7 @@ public adminSetXP(id, level, cid)
 	}
 
 	new arg2[12]
-	read_argv(2, arg2, 11)
+	read_argv(2, arg2, charsmax(arg2))
 
 	if ( !(isdigit(arg2[0]) || (equal(arg2[0], "-", 1) && isdigit(arg2[1]))) ) {
 		console_print(id, "[SH] Second argument must be a XP value.")
@@ -3747,20 +3739,21 @@ public adminSetXP(id, level, cid)
 
 	new cmd[32], arg[32]
 	new bool:giveXP = false
-	read_argv(0, cmd, 31)
-	read_argv(1, arg, 31)
+	read_argv(0, cmd, charsmax(cmd))
+	read_argv(1, arg, charsmax(arg))
 
 	if ( equali(cmd, "amx_shaddxp") ) giveXP = true
 
 	new name2[32], authid2[32]
-	get_user_name(id, name2, 31)
-	get_user_authid(id, authid2, 31)
+	get_user_name(id, name2, charsmax(name2))
+	get_user_authid(id, authid2, charsmax(authid2))
 
 	if ( arg[0] == '@' ) {
 		new players[32], inum
 		if ( equali("T", arg[1]) ) {
-			copy(arg[1], 30, "TERRORIST")
+			copy(arg[1], charsmax(arg)-1, "TERRORIST")
 		}
+
 		if ( equali("ALL", arg[1]) ) {
 			get_players(players, inum)
 		}
@@ -3796,12 +3789,12 @@ public adminSetXP(id, level, cid)
 		displayPowers(player, false)
 
 		new name[32], authid[32]
-		get_user_name(player, name, 31)
-		get_user_authid(player, authid, 31)
+		get_user_name(player, name, charsmax(name))
+		get_user_authid(player, authid, charsmax(authid))
 
 		show_activity(id, name2, "%s %d XP on %s", giveXP ? "added" : "set", xp, name)
 
-		console_print(id,"[SH] Client ^"%s^" has been %s %d XP",name,giveXP ? "given" : "set to",xp)
+		console_print(id, "[SH] Client ^"%s^" has been %s %d XP", name, giveXP ? "given" : "set to", xp)
 
 		log_amx("[SH] ^"%s<%d><%s><>^" %s %d XP on ^"%s<%d><%s><>^"", name2, get_user_userid(id), authid2, giveXP ? "added" : "set", xp, name, get_user_userid(player), authid)
 	}
@@ -3820,15 +3813,15 @@ public adminBanXP(id, level, cid)
 	}
 
 	new arg[32]
-	read_argv(1, arg, 31)
+	read_argv(1, arg, charsmax(arg))
 
 	new player = cmd_target(id, arg, CMDTARGET_OBEY_IMMUNITY)
 	if ( !player ) return PLUGIN_HANDLED
 
 	new name[32], authid[32], bankey[32]
 	new userid = get_user_userid(player)
-	get_user_name(player, name, 31)
-	get_user_authid(player, authid, 31)
+	get_user_name(player, name, charsmax(name))
+	get_user_authid(player, authid, charsmax(authid))
 
 	if ( gIsPowerBanned[player] ) {
 		console_print(id, "[SH] Client is already SuperHero banned: ^"%s<%d><%s>^"", name, userid, authid)
@@ -3857,8 +3850,8 @@ public adminBanXP(id, level, cid)
 	fclose(banFile)
 
 	new name2[32], authid2[32]
-	get_user_name(id, name2, 31)
-	get_user_authid(id, authid2, 31)
+	get_user_name(id, name2, charsmax(name2))
+	get_user_authid(id, authid2, charsmax(authid2))
 
 	gIsPowerBanned[player] = true
 	clearAllPowers(player, false)	// Avoids Recursion with false
@@ -3891,18 +3884,18 @@ public adminUnbanXP(id, level, cid)
 	}
 
 	new arg[32]
-	read_argv(1, arg, 31)
+	read_argv(1, arg, charsmax(arg))
 
 	new player = cmd_target(id, arg, CMDTARGET_ALLOW_SELF)
 
 	new name2[32], authid2[32], bankey[32]
-	get_user_name(id, name2, 31)
-	get_user_authid(id, authid2, 31)
+	get_user_name(id, name2, charsmax(name2))
+	get_user_authid(id, authid2, charsmax(authid2))
 
 	if ( player ) {
 		new name[32], authid[32]
-		get_user_name(player, name, 31)
-		get_user_authid(player, authid, 31)
+		get_user_name(player, name, charsmax(name))
+		get_user_authid(player, authid, charsmax(authid))
 		new userid = get_user_userid(player)
 
 		if ( !gIsPowerBanned[player] ) {
@@ -3928,7 +3921,7 @@ public adminUnbanXP(id, level, cid)
 	}
 	else {
 		// Assume attempting to unban by steamid or IP
-		copy(bankey, 31, arg)
+		copy(bankey, charsmax(bankey), arg)
 		console_print(id, "[SH] Attemping to unban using argument: %s", bankey)
 
 		if ( !removeBanFromFile(id, bankey) ) return PLUGIN_HANDLED
@@ -3945,7 +3938,7 @@ public adminUnbanXP(id, level, cid)
 removeBanFromFile(adminID, const bankey[32])
 {
 	new tempFile[128]
-	formatex(tempFile, 127, "%s~", gBanFile)
+	formatex(tempFile, charsmax(tempFile), "%s~", gBanFile)
 
 	new banFile = fopen(gBanFile, "rt")
 	new tempBanFile = fopen(tempFile, "wt")
@@ -3960,7 +3953,7 @@ removeBanFromFile(adminID, const bankey[32])
 	new data[128]
 
 	while ( !feof(banFile) ) {
-		fgets(banFile, data, 127)
+		fgets(banFile, data, charsmax(data))
 		trim(data)
 
 		// Blank line skip copying it
@@ -4012,15 +4005,15 @@ public adminImmuneXP(id, level, cid)
 	}
 
 	new arg[32]
-	read_argv(1, arg, 31)
+	read_argv(1, arg, charsmax(arg))
 
 	new player = cmd_target(id, arg, CMDTARGET_ALLOW_SELF)
 	if ( !player ) return PLUGIN_HANDLED
 
 	new name[32], authid[32], bankey[32]
 	new userid = get_user_userid(player)
-	get_user_name(player, name, 31)
-	get_user_authid(player, authid, 31)
+	get_user_name(player, name, charsmax(name))
+	get_user_authid(player, authid, charsmax(authid))
 
 	if ( !getSaveKey(player, bankey) ) {
 		console_print(id, "[SH] Unable to find valid Save Key for client: ^"%s<%d><%s>^"", name, userid, authid)
@@ -4034,7 +4027,7 @@ public adminImmuneXP(id, level, cid)
 	}
 
 	new arg2[4], mode
-	read_argv(2, arg2, 3)
+	read_argv(2, arg2, charsmax(arg2))
 
 	if ( equali(arg2, "on") ) mode = 1
 	else if  ( equali(arg2, "off") ) mode = 0
@@ -4043,7 +4036,7 @@ public adminImmuneXP(id, level, cid)
 	switch(mode) {
 		case 0: {
 			if ( !(gPlayerFlags[player] & SH_FLAG_XPIMMUNE) ) {
-				console_print(id, "[SH] Client is already not immune to sh_savedays XP prune: ^"%s<%d><%s>^"", name, userid, authid)
+				console_print(id, "[SH] Client is already nonimmune to sh_savedays XP prune: ^"%s<%d><%s>^"", name, userid, authid)
 				return PLUGIN_HANDLED
 			}
 			gPlayerFlags[player] &= ~SH_FLAG_XPIMMUNE
@@ -4068,8 +4061,8 @@ public adminImmuneXP(id, level, cid)
 	memoryTableUpdate(player)
 
 	new name2[32], authid2[32]
-	get_user_name(id, name2, 31)
-	get_user_authid(id, authid2, 31)
+	get_user_name(id, name2, charsmax(name2))
+	get_user_authid(id, authid2, charsmax(authid2))
 
 	show_activity(id, name2, "%s %s immune from inactive user XP deletion", mode ? "Set" : "Unset", name) 
 
@@ -4097,8 +4090,8 @@ public adminEraseXP(id, level, cid)
 	cleanXP(true)
 
 	new name[32], authid[32]
-	get_user_name(id, name, 31)
-	get_user_authid(id, authid, 31)
+	get_user_name(id, name, charsmax(name))
+	get_user_authid(id, authid, charsmax(authid))
 
 	show_activity(id, name, "Erased ALL Saved XP")
 
@@ -4113,15 +4106,14 @@ showHeroes(id)
 {
 	if ( !get_pcvar_num(sv_superheros) ) return PLUGIN_CONTINUE
 
-	new len = 1500
 	new buffer[1501]
 	new n = 0
 	new heroIndex, bindNum, x
 	new bindNumtxt[128], name_lvl[128]
 
-	n += copy(buffer[n],len-n,"<html><head><style type=^"text/css^">pre{color:#FFB000;}body{background:#000000;margin-left:8px;margin-top:0px;}</style></head><body><pre>^n")
+	n += copy(buffer[n], charsmax(buffer)-n, "<html><head><style type=^"text/css^">pre{color:#FFB000;}body{background:#000000;margin-left:8px;margin-top:0px;}</style></head><body><pre>^n")
 
-	n += copy(buffer[n], len-n, "Your Heroes Are:^n^n")
+	n += copy(buffer[n], charsmax(buffer)-n, "Your Heroes Are:^n^n")
 	new playerpowercount = getPowerCount(id)
 	for ( x = 1; x <= playerpowercount; x++ ) {
 		heroIndex = gPlayerPowers[id][x]
@@ -4129,14 +4121,14 @@ showHeroes(id)
 		bindNumtxt[0] = '^0'
 
 		if ( bindNum > 0 ) {
-			formatex(bindNumtxt, 127, "- POWER #%d", bindNum)
+			formatex(bindNumtxt, charsmax(bindNumtxt), "- POWER #%d", bindNum)
 		}
 
-		formatex(name_lvl, 127, "%s (%d)", gSuperHeros[heroIndex][hero], getHeroLevel(heroIndex))
-		n += formatex(buffer[n], len-n, "%d) %-18s- %s %s^n", x, name_lvl, gSuperHeros[heroIndex][superpower], bindNumtxt)
+		formatex(name_lvl, charsmax(name_lvl), "%s (%d)", gSuperHeros[heroIndex][hero], getHeroLevel(heroIndex))
+		n += formatex(buffer[n], charsmax(buffer)-n, "%d) %-18s- %s %s^n", x, name_lvl, gSuperHeros[heroIndex][superpower], bindNumtxt)
 	}
 
-	n += copy(buffer[n], len-n, "</pre></body></html>")
+	copy(buffer[n], charsmax(buffer)-n, "</pre></body></html>")
 
 	show_motd(id, buffer, "Your SuperHero Heroes")
 	return PLUGIN_HANDLED
@@ -4146,13 +4138,13 @@ public showSkillsCon(id, level, cid)
 {
 	if ( !cmd_access(id,level,cid,1) ) return PLUGIN_HANDLED
 
-	if (!get_pcvar_num(sv_superheros)) {
-		console_print(id,"[SH] SuperHero Mod is currently disabled")
+	if ( !get_pcvar_num(sv_superheros) ) {
+		console_print(id, "[SH] SuperHero Mod is currently disabled")
 		return PLUGIN_HANDLED
 	}
 
 	new arg1[32]
-	read_argv(1,arg1,31)
+	read_argv(1, arg1, charsmax(arg1))
 
 	showPlayerSkills(id, 0, arg1)
 	return PLUGIN_HANDLED
@@ -4168,7 +4160,7 @@ public showLevelsCon(id,level,cid)
 	}
 
 	new arg1[32]
-	read_argv(1, arg1, 31)
+	read_argv(1, arg1, charsmax(arg1))
 
 	showPlayerLevels(id, 0, arg1)
 	return PLUGIN_HANDLED
@@ -4176,60 +4168,60 @@ public showLevelsCon(id,level,cid)
 //----------------------------------------------------------------------------------------------
 public showHeroListCon(id)
 {
-	if (!get_pcvar_num(sv_superheros)) {
-		console_print(id,"[SH] SuperHero Mod is currently disabled")
+	if ( !get_pcvar_num(sv_superheros) ) {
+		console_print(id, "[SH] SuperHero Mod is currently disabled")
 		return PLUGIN_HANDLED
 	}
 
-	console_print(id,"^n----- Hero Listing -----")
+	console_print(id, "^n----- Hero Listing -----")
 	new argx[20]
-	read_argv(1,argx, 19)
-	new start=0,end=0
-	if (!isdigit(argx[0]) && !equal("", argx)) {
+	read_argv(1, argx, charsmax(argx))
+	new start, end
+	if ( !isdigit(argx[0]) && !equal("", argx) ) {
 		new tmp[8], n=1
-		read_argv(2,tmp,7)
+		read_argv(2, tmp, charsmax(tmp))
 		start = str_to_num(tmp)
-		if (start < 0) start = 0
-		if (start != 0) start--
+		if ( start < 0 ) start = 0
+		if ( start != 0 ) start--
 		end = start + HEROAMOUNT
-		for(new x = 0; x < gSuperHeroCount; x++) {
-			if ((containi(gSuperHeros[x][hero], argx) != -1) || (containi(gSuperHeros[x][help], argx) != -1)) {
-				if (n > start && n <= end) {
-					console_print(id,"%3d: %s (%d%s) - %s",n,gSuperHeros[x][hero],getHeroLevel(x),gSuperHeros[x][requiresKeys] ? "b" : "",gSuperHeros[x][help])
+		for( new x = 0; x < gSuperHeroCount; x++ ) {
+			if ( (containi(gSuperHeros[x][hero], argx) != -1) || (containi(gSuperHeros[x][help], argx) != -1) ) {
+				if ( n > start && n <= end ) {
+					console_print(id, "%3d: %s (%d%s) - %s", n, gSuperHeros[x][hero], getHeroLevel(x), gSuperHeros[x][requiresKeys] ? "b" : "", gSuperHeros[x][help])
 				}
 				n++
 			}
 		}
-		if (start+1 > n-1) {
-			console_print(id,"----- Highest Entry: %d -----",n-1)
+		if ( start+1 > n-1 ) {
+			console_print(id, "----- Highest Entry: %d -----", n-1)
 		}
-		else if (n-1 == 0) {
-			console_print(id,"----- No Matches for Your Search -----")
+		else if ( n-1 == 0 ) {
+			console_print(id, "----- No Matches for Your Search -----")
 		}
-		else if (n-1 < end) {
-			console_print(id,"----- Entries %d - %d of %d -----",start+1,n-1,n-1)
+		else if ( n-1 < end ) {
+			console_print(id, "----- Entries %d - %d of %d -----", start+1, n-1, n-1)
 		}
 		else {
-			console_print(id,"----- Entries %d - %d of %d -----",start+1,end,n-1)
+			console_print(id, "----- Entries %d - %d of %d -----", start+1, end, n-1)
 		}
 
-		if (end < n-1) {
-			console_print(id,"----- Use 'herolist %s %d' for more -----",argx,end+1)
+		if ( end < n-1 ) {
+			console_print(id, "----- Use 'herolist %s %d' for more -----", argx, end+1)
 		}
 	}
 	else {
 		new arg1[8]
-		start = read_argv(1,arg1,7) ? str_to_num(arg1) : 1
-		if (--start < 0) start = 0
-		if (start >= gSuperHeroCount) start = gSuperHeroCount - 1
+		start = read_argv(1, arg1, charsmax(arg1)) ? str_to_num(arg1) : 1
+		if ( --start < 0 ) start = 0
+		if ( start >= gSuperHeroCount ) start = gSuperHeroCount - 1
 		end = start + HEROAMOUNT
-		if (end > gSuperHeroCount) end = gSuperHeroCount
-		for (new i = start; i < end; i++) {
-			console_print(id,"%3d: %s (%d%s) - %s",i+1,gSuperHeros[i][hero],getHeroLevel(i),gSuperHeros[i][requiresKeys] ? "b" : "",gSuperHeros[i][help])
+		if ( end > gSuperHeroCount ) end = gSuperHeroCount
+		for ( new i = start; i < end; i++ ) {
+			console_print(id, "%3d: %s (%d%s) - %s", i+1, gSuperHeros[i][hero], getHeroLevel(i), gSuperHeros[i][requiresKeys] ? "b" : "", gSuperHeros[i][help])
 		}
-		console_print(id,"----- Entries %d - %d of %d -----",start+1,end,gSuperHeroCount)
-		if (end < gSuperHeroCount) {
-			console_print(id,"----- Use 'herolist %d' for more -----",end+1)
+		console_print(id, "----- Entries %d - %d of %d -----", start+1, end, gSuperHeroCount)
+		if ( end < gSuperHeroCount ) {
+			console_print(id, "----- Use 'herolist %d' for more -----", end+1)
 		}
 	}
 	return PLUGIN_HANDLED
@@ -4242,8 +4234,8 @@ showHelpHud()
 	static flags[4]
 	switch(gCMDProj)
 	{
-		case 1: copy(flags, 3, "bch")	// show to dead non-bots only
-		case 2: copy(flags, 3, "ch")	// show to live or dead non-bots
+		case 1: copy(flags, charsmax(flags), "bch")	// show to dead non-bots only
+		case 2: copy(flags, charsmax(flags), "ch")	// show to live or dead non-bots
 		default: return			// off 
 	}
 
@@ -4255,7 +4247,7 @@ showHelpHud()
 	for ( i = 0; i < numplayers; i++ ) {
 		id = players[i]
 		if ( gPlayerFlags[id] & SH_FLAG_HUDHELP ) {
-			ShowSyncHudMsg(id, gHelpHudSync, gHelpHudMsg)
+			ShowSyncHudMsg(id, gHelpHudSync, "%s", gHelpHudMsg)
 		}
 	}
 }
@@ -4291,10 +4283,8 @@ public client_putinserver(id)
 
 	gPlayerPutInServer[id] = true
 
-	// Find czero bots to register Ham_Spawn
+	// Find a czero bot to register Ham_Spawn
 	if ( gIsCzero && pev(id, pev_flags) & FL_FAKECLIENT && get_pcvar_num(bot_quota) > 0 && !gCZBotRegisterHam ) {
-		// These bots will not have the inital Ham_Spawn call because the ham is registered after that call.
-		gBlockedFirstHamSpawn[id] = true
 
 		// Delay for private data to initialize
 		set_task(0.1, "czbotHookHam", id)
@@ -4330,6 +4320,10 @@ public czbotHookHam(id)
 		RegisterHamFromEntity(Ham_Spawn, id, "ham_PlayerSpawn", 1)
 
 		gCZBotRegisterHam = true
+
+		// Incase this CZ bot was spawned alive during a round, call the Ham_Spawn
+		// because it would have happned before the RegisterHam.
+		if ( is_user_alive(id) ) ham_PlayerSpawn(id)
 	}
 }
 //----------------------------------------------------------------------------------------------
@@ -4367,7 +4361,6 @@ initPlayer(id)
 	gPlayerFlags[id] = SH_FLAG_HUDHELP
 	gFirstRound[id] = true
 	gNewRoundSpawn[id] = true
-	gBlockedFirstHamSpawn[id] = false
 	gIsPowerBanned[id] = false
 	gReadXPNextRound[id] = gLongTermXP
 
@@ -4383,7 +4376,7 @@ public fm_Touch(ptr, ptd)
 
 	static entclass[32]
 	entclass[0] = '^0'
-	pev(ptr, pev_classname, entclass, 31)
+	pev(ptr, pev_classname, entclass, charsmax(entclass))
 
 	// Lets block the picking up of a shield
 	if ( equal(entclass, "weapon_shield") ) {
@@ -4442,7 +4435,7 @@ public fn_autobuy(id)
 getVipFlags()
 {
 	static temp[8]
-	get_pcvar_string(sh_blockvip, temp, 7)
+	get_pcvar_string(sh_blockvip, temp, charsmax(temp))
 
 	return read_flags(temp)
 }
@@ -4450,8 +4443,8 @@ getVipFlags()
 getLoguserIndex()
 {
 	static loguser[80], name[32]
-	read_logargv(0, loguser, 79)
-	parse_loguser(loguser, name, 31)
+	read_logargv(0, loguser, charsmax(loguser))
+	parse_loguser(loguser, name, charsmax(name))
 
 	return get_user_index(name)
 }
@@ -4763,17 +4756,17 @@ getSaveKey(id, savekey[32])
 {
 	if ( is_user_bot(id) ) {
 		static botname[32]
-		get_user_name(id, botname, 31)
+		get_user_name(id, botname, charsmax(botname))
 
 		// Get Rid of BOT Tag
 
 		// PODBot
-		replace(botname, 31, "[POD]", "")
-		replace(botname, 31, "[P*D]", "")
-		replace(botname, 31, "[P0D]", "")
+		replace(botname, charsmax(botname), "[POD]", "")
+		replace(botname, charsmax(botname), "[P*D]", "")
+		replace(botname, charsmax(botname), "[P0D]", "")
 
 		// CZ Bots
-		replace(botname, 31, "[BOT] ", "")
+		replace(botname, charsmax(botname), "[BOT] ", "")
 
 		// Attempt to get rid of the skill tag so we save with bots true name
 		new lastchar = strlen(botname) - 1
@@ -4787,22 +4780,22 @@ getSaveKey(id, savekey[32])
 			}
 		}
 		if ( botname[0] != '^0' ) {
-			replace_all(botname, 31, " ", "_")
-			formatex(savekey, 31, "[BOT]%s", botname)
+			replace_all(botname, charsmax(botname), " ", "_")
+			formatex(savekey, charsmax(savekey), "[BOT]%s", botname)
 		}
 	}
 	// Hack for STEAM's retardedness with listen servers
 	else if ( !is_dedicated_server() && id == 1 ) {
-		copy(savekey, 31, "loopback")
+		copy(savekey, charsmax(savekey), "loopback")
 	}
 	else {
 		if ( get_pcvar_num(sv_lan) ) {
-			get_user_ip(id, savekey, 31, 1)		// by ip without port
+			get_user_ip(id, savekey, charsmax(savekey), 1)		// by ip without port
 		}
 		else {
-			get_user_authid(id, savekey, 31)		// by steamid
+			get_user_authid(id, savekey, charsmax(savekey))		// by steamid
 			if ( equal(savekey[9], "LAN") || equal(savekey, "4294967295") ) {
-				get_user_ip(id, savekey, 31, 1)	// by ip without port
+				get_user_ip(id, savekey, charsmax(savekey), 1)	// by ip without port
 			}
 		}
 	}
@@ -4829,7 +4822,7 @@ checkBan(id, const bankey[32])
 	}
 
 	while ( !feof(banFile) && !idBanned ) {
-		fgets(banFile, data, 31)
+		fgets(banFile, data, charsmax(data))
 		trim(data)
 
 		switch(data[0]) {
@@ -4858,8 +4851,8 @@ memoryTableUpdate(id)
 	// Check to see if there's already another id in that slot... (disconnected etc.)
 	if ( gMemoryTableKeys[id][0] != '^0' && !equali(gMemoryTableKeys[id], savekey) ) {
 		if ( gMemoryTableCount < gMemoryTableSize ) {
-			copy(gMemoryTableKeys[gMemoryTableCount], 31, gMemoryTableKeys[id])
-			copy(gMemoryTableNames[gMemoryTableCount], 31, gMemoryTableNames[id])
+			copy(gMemoryTableKeys[gMemoryTableCount], charsmax(gMemoryTableKeys[]), gMemoryTableKeys[id])
+			copy(gMemoryTableNames[gMemoryTableCount], charsmax(gMemoryTableNames[]), gMemoryTableNames[id])
 			gMemoryTableXP[gMemoryTableCount] = gMemoryTableXP[id]
 			gMemoryTableFlags[gMemoryTableCount] = gMemoryTableFlags[id]
 			powerCount = gMemoryTablePowers[id][0]
@@ -4871,8 +4864,8 @@ memoryTableUpdate(id)
 	}
 
 	// OK copy to table now - might have had to write 1 record...
-	copy(gMemoryTableKeys[id], 31, savekey)
-	get_user_name(id, gMemoryTableNames[id], 31)
+	copy(gMemoryTableKeys[id], charsmax(gMemoryTableKeys[]), savekey)
+	get_user_name(id, gMemoryTableNames[id], charsmax(gMemoryTableNames[]))
 	gMemoryTableXP[id] = gPlayerXP[id]
 	gMemoryTableFlags[id] = gPlayerFlags[id]
 
@@ -4929,7 +4922,7 @@ public plugin_end()
 readINI()
 {
 	new levelINIFile[128]
-	formatex(levelINIFile, 127, "%s/superhero.ini", gSHConfigDir)
+	formatex(levelINIFile, charsmax(levelINIFile), "%s/superhero.ini", gSHConfigDir)
 
 	if ( !file_exists(levelINIFile) ) createINIFile(levelINIFile)
 
@@ -4947,19 +4940,19 @@ readINI()
 	new LeftXP[32], LeftXPG[32]
 
 	while (!feof(levelsFile)) {
-		fgets(levelsFile, data, 1500)
+		fgets(levelsFile, data, charsmax(data))
 		trim(data)
 
 		if ( data[0] == '^0' || equal(data, "##", 2) ) continue
 
 		if ( equali(data, "NUMLEVELS", 9) ) {
-			parse(data, tag, 19, numLevels, 5)
+			parse(data, tag, charsmax(tag), numLevels, charsmax(numLevels))
 		}
 		else if ( (equal(data, "XPLEVELS", 8) && !gLongTermXP) || (equal(data, "LTXPLEVELS", 10) && gLongTermXP) ) {
-			copy(XP, 1500, data)
+			copy(XP, charsmax(XP), data)
 		}
 		else if ( (equal(data, "XPGIVEN", 7) && !gLongTermXP) || (equal(data, "LTXPGIVEN", 9) && gLongTermXP) ) {
-			copy(XPG, 1500, data)
+			copy(XPG, charsmax(XPG), data)
 		}
 	}
 	fclose(levelsFile)
@@ -4988,14 +4981,14 @@ readINI()
 	}
 
 	//Get the data tag out of the way
-	strbrkqt(XP, LeftXP, 31, XP, 1500)
-	strbrkqt(XPG, LeftXPG,31, XPG, 1500)
+	strbrkqt(XP, LeftXP, charsmax(LeftXP), XP, charsmax(XP))
+	strbrkqt(XPG, LeftXPG, charsmax(LeftXPG), XPG, charsmax(XPG))
 
 	while ( XP[0] != '^0' && XPG[0] != '^0' && loadCount < gNumLevels ) {
 		loadCount++
 
-		strbrkqt(XP, LeftXP, 31, XP, 1500)
-		strbrkqt(XPG, LeftXPG, 31, XPG, 1500)
+		strbrkqt(XP, LeftXP, charsmax(LeftXP), XP, charsmax(XP))
+		strbrkqt(XPG, LeftXPG, charsmax(LeftXPG), XPG, charsmax(XPG))
 
 		gXPLevel[loadCount] = str_to_num(LeftXP)
 		gXPGiven[loadCount] = str_to_num(LeftXPG)
@@ -5134,32 +5127,30 @@ createHelpMotdFile(const helpMotdFile[])
 buildHelpHud()
 {
 	// Max characters hud messages can be is 479
-	new lenx = 339
-	new n = 0
-
 	// Message is 338 characters currently
-	n += copy(gHelpHudMsg[n], lenx-n, "SuperHero Mod Help^n^n")
+	new n
+	n += copy(gHelpHudMsg[n], charsmax(gHelpHudMsg)-n, "SuperHero Mod Help^n^n")
 
-	n += copy(gHelpHudMsg[n], lenx-n, "How To Use Powers:^n")
-	n += copy(gHelpHudMsg[n], lenx-n, "--------------------^n")
-	n += copy(gHelpHudMsg[n], lenx-n, "Input bind into console^n")
-	n += copy(gHelpHudMsg[n], lenx-n, "Example:^n")
-	n += copy(gHelpHudMsg[n], lenx-n, "bind h +power1^n^n")
+	n += copy(gHelpHudMsg[n], charsmax(gHelpHudMsg)-n, "How To Use Powers:^n")
+	n += copy(gHelpHudMsg[n], charsmax(gHelpHudMsg)-n, "--------------------^n")
+	n += copy(gHelpHudMsg[n], charsmax(gHelpHudMsg)-n, "Input bind into console^n")
+	n += copy(gHelpHudMsg[n], charsmax(gHelpHudMsg)-n, "Example:^n")
+	n += copy(gHelpHudMsg[n], charsmax(gHelpHudMsg)-n, "bind h +power1^n^n")
 
-	n += copy(gHelpHudMsg[n], lenx-n, "Say Commands:^n")
-	n += copy(gHelpHudMsg[n], lenx-n, "--------------------^n")
-	n += copy(gHelpHudMsg[n], lenx-n, "/help^n")
-	n += copy(gHelpHudMsg[n], lenx-n, "/clearpowers^n")
-	n += copy(gHelpHudMsg[n], lenx-n, "/showmenu^n")
-	n += copy(gHelpHudMsg[n], lenx-n, "/drop <hero>^n")
-	n += copy(gHelpHudMsg[n], lenx-n, "/herolist^n")
-	n += copy(gHelpHudMsg[n], lenx-n, "/playerskills^n")
-	n += copy(gHelpHudMsg[n], lenx-n, "/playerlevels^n")
-	n += copy(gHelpHudMsg[n], lenx-n, "/myheroes^n")
-	n += copy(gHelpHudMsg[n], lenx-n, "/automenu^n")
-	n += copy(gHelpHudMsg[n], lenx-n, "--------------------^n")
-	n += copy(gHelpHudMsg[n], lenx-n, "Enable This HUD:  /helpon^n")
-	n += copy(gHelpHudMsg[n], lenx-n, "Disable This HUD: /helpoff")
+	n += copy(gHelpHudMsg[n], charsmax(gHelpHudMsg)-n, "Say Commands:^n")
+	n += copy(gHelpHudMsg[n], charsmax(gHelpHudMsg)-n, "--------------------^n")
+	n += copy(gHelpHudMsg[n], charsmax(gHelpHudMsg)-n, "/help^n")
+	n += copy(gHelpHudMsg[n], charsmax(gHelpHudMsg)-n, "/clearpowers^n")
+	n += copy(gHelpHudMsg[n], charsmax(gHelpHudMsg)-n, "/showmenu^n")
+	n += copy(gHelpHudMsg[n], charsmax(gHelpHudMsg)-n, "/drop <hero>^n")
+	n += copy(gHelpHudMsg[n], charsmax(gHelpHudMsg)-n, "/herolist^n")
+	n += copy(gHelpHudMsg[n], charsmax(gHelpHudMsg)-n, "/playerskills^n")
+	n += copy(gHelpHudMsg[n], charsmax(gHelpHudMsg)-n, "/playerlevels^n")
+	n += copy(gHelpHudMsg[n], charsmax(gHelpHudMsg)-n, "/myheroes^n")
+	n += copy(gHelpHudMsg[n], charsmax(gHelpHudMsg)-n, "/automenu^n")
+	n += copy(gHelpHudMsg[n], charsmax(gHelpHudMsg)-n, "--------------------^n")
+	n += copy(gHelpHudMsg[n], charsmax(gHelpHudMsg)-n, "Enable This HUD:  /helpon^n")
+	copy(gHelpHudMsg[n], charsmax(gHelpHudMsg)-n, "Disable This HUD: /helpoff")
 }
 //----------------------------------------------------------------------------------------------
 
@@ -5174,17 +5165,17 @@ public regKeyUp()
 	new pFunction[20]
 
 	// What's the Heroes Name
-	read_argv(1, pHero, 24)
+	read_argv(1, pHero, charsmax(pHero))
 
 	//Get the function being registered
-	read_argv(2, pFunction, 19)
+	read_argv(2, pFunction, charsmax(pFunction))
 
 	debugMsg(0, 3, "Register KeyUP -> Name: %s  - Function: %s", pHero, pFunction)
 
 	// Get Hero Index
 	new idx = getHeroID(pHero)
 	if ( idx >= 0 && idx < gSuperHeroCount ) {
-		copy(gEventKeyUp[idx], 19, pFunction)
+		copy(gEventKeyUp[idx], charsmax(gEventKeyUp[]), pFunction)
 	}
 }
 //----------------------------------------------------------------------------------------------
@@ -5194,17 +5185,17 @@ public regKeyDown()
 	new pFunction[20]
 
 	// What's the Heroes Name
-	read_argv(1, pHero, 24)
+	read_argv(1, pHero, charsmax(pHero))
 
 	//Get the function being registered
-	read_argv(2, pFunction, 19)
+	read_argv(2, pFunction, charsmax(pFunction))
 
 	debugMsg(0, 3, "Register KeyDOWN -> Name: %s  - Function: %s", pHero, pFunction)
 
 	// Get Hero Index
 	new idx = getHeroID(pHero)
 	if ( idx >= 0 && idx < gSuperHeroCount) {
-		copy(gEventKeyDown[idx], 19, pFunction)
+		copy(gEventKeyDown[idx], charsmax(gEventKeyDown[]), pFunction)
 	}
 }
 //----------------------------------------------------------------------------------------------
@@ -5214,16 +5205,16 @@ public regLevels()
 	new pFunction[20]
 
 	// What's the Heroes Name
-	read_argv(1, pHero, 24)
+	read_argv(1, pHero, charsmax(pHero))
 
-	read_argv(2, pFunction, 19)
+	read_argv(2, pFunction, charsmax(pFunction))
 
 	debugMsg(0, 3, "Register Levels -> Name: %s  - Function: %s", pHero, pFunction)
 
 	// Get Hero Index
 	new idx = getHeroID(pHero)
 	if ( idx >= 0 && idx < gSuperHeroCount) {
-		copy(gEventLevels[idx], 19, pFunction)
+		copy(gEventLevels[idx], charsmax(gEventLevels[]), pFunction)
 	}
 }
 //----------------------------------------------------------------------------------------------
@@ -5233,16 +5224,16 @@ public regMaxHealth()
 	new pFunction[20]
 
 	// What's the Heroes Name
-	read_argv(1, pHero, 24)
+	read_argv(1, pHero, charsmax(pHero))
 
-	read_argv(2, pFunction, 19)
+	read_argv(2, pFunction, charsmax(pFunction))
 
 	debugMsg(0, 3, "Register MaxHealth -> Name: %s  - Function: %s", pHero, pFunction)
 
 	// Get Hero Index
 	new idx = getHeroID(pHero)
 	if ( idx >= 0 && idx < gSuperHeroCount) {
-		copy(gEventMaxHealth[idx], 19, pFunction)
+		copy(gEventMaxHealth[idx], charsmax(gEventMaxHealth[]), pFunction)
 	}
 }
 //----------------------------------------------------------------------------------------------
@@ -5252,16 +5243,16 @@ public regInit()
 	new pFunction[20]
 
 	// What's the Heroes Name
-	read_argv(1, pHero, 24)
+	read_argv(1, pHero, charsmax(pHero))
 
-	read_argv(2, pFunction, 19)
+	read_argv(2, pFunction, charsmax(pFunction))
 
 	debugMsg(0, 3, "Register Init -> Name: %s  - Function: %s", pHero, pFunction)
 
 	// Get Hero Index
 	new idx = getHeroID(pHero)
 	if ( idx >= 0 && idx < gSuperHeroCount) {
-		copy(gEventInit[idx], 19, pFunction)
+		copy(gEventInit[idx], charsmax(gEventInit[]), pFunction)
 	}
 }
 //----------------------------------------------------------------------------------------------

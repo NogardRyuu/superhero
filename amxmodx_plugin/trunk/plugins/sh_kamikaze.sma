@@ -18,6 +18,7 @@ new const gHeroName[] = "Kamikaze"
 new bool:gHasKamikaze[SH_MAXSLOTS+1]
 new gFuseTime[SH_MAXSLOTS+1]
 new const gSoundCountdown[] = "buttons/blip2.wav"
+new const gSoundFvox[11][] = {"", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"}
 new gSpriteSmoke, gSpriteWhite, gSpriteFire
 new gMsgSync
 new pCvarRadius, pCvarFuse, pCvarMaxDamage
@@ -89,7 +90,7 @@ public kamikaze_check()
 	if ( !sh_is_active() ) return
 
 	static players[SH_MAXSLOTS], playerCount, player, fuseTime, i
-	get_players(players, playerCount, "a")
+	get_players(players, playerCount, "ah")
 
 	for ( i = 0; i < playerCount; i++ ) {
 		player = players[i]
@@ -116,9 +117,7 @@ public kamikaze_check()
 					client_cmd(player, "spk ^"fvox/remaining^"")
 				}
 				else if ( fuseTime < 11 ) {
-					new temp[48]
-					num_to_word(fuseTime, temp, 47)
-					client_cmd(player, "spk ^"fvox/%s^"", temp)
+					client_cmd(player, "spk ^"fvox/%s^"", gSoundFvox[fuseTime])
 				}
 			}
 		}

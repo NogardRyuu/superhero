@@ -59,7 +59,7 @@ public captaina_loop()
 	static Float:godsecs
 	pctperlev = get_pcvar_float(gPcvarPctPerLev)
 	godsecs = get_pcvar_float(gPcvarGodSecs)
-	static randNum, heroLevel
+	static heroLevel
 
 	static players[32], playerCount, id, i
 	get_players(players, playerCount, "ah")
@@ -69,11 +69,9 @@ public captaina_loop()
 
 		if ( gHasCaptainAmerica[id] && !get_user_godmode(id) ) {
 
-			randNum = random_num(0, 100)
-
 			heroLevel = floatround(sh_get_user_lvl(id) * pctperlev * gMaxLevelFactor)
 
-			if ( heroLevel >= randNum ) {
+			if ( heroLevel >= random_num(0, 100) ) {
 
 				sh_set_godmode(id, godsecs)
 

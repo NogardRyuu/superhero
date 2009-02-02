@@ -7,6 +7,7 @@ invisman_level 0
 invisman_alpha 50		//Min Alpha level when invisible. 0 = invisible, 255 = full visibility.
 invisman_delay 5.0		//Seconds a player must be still to become fully invisibile
 invisman_checkmove 1 		//0 = no movement check only shooting, 1 = check movement buttons, 2 or more = speed movement to check
+invisman_checkonground 0	//Must player be on ground to be invisible (Default 0 = no, 1 = yes)
 
 */
 
@@ -18,6 +19,8 @@ new const gHeroName[] = "Invisible Man"
 new bool:gHasInvisibleMan[SH_MAXSLOTS+1]
 new gIsInvisible[SH_MAXSLOTS+1]
 new Float:gStillTime[SH_MAXSLOTS+1]
+new const gButtons = IN_ATTACK | IN_ATTACK2 | IN_RELOAD | IN_USE 
+new const gButtonsMove = IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT | IN_JUMP
 new gPcvarAlpha, gPcvarDelay, gPcvarCheckMove, gPcvarCheckOnGround
 //----------------------------------------------------------------------------------------------
 public plugin_init()
@@ -35,9 +38,6 @@ public plugin_init()
 	// FIRE THE EVENT TO CREATE THIS SUPERHERO!
 	gHeroID = sh_create_hero(gHeroName, pcvarLevel)
 	sh_set_hero_info(gHeroID, "Invisibility", "Makes you less visible and harder to see. Only works while standing/not shooting and not zooming.")
-
-	// REGISTER EVENTS THIS HERO WILL RESPOND TO!
-	register_event("Damage", "invisman_damage", "b", "2!0")
 
 	// CHECK SOME BUTTONS
 	set_task(0.1, "checkButtons", _, _, _, "b")
@@ -109,8 +109,8 @@ public checkButtons()
 
 		butnprs = pev(id, pev_button)
 
-		//Always check these
-		if ( butnprs&IN_ATTACK || butnprs&IN_ATTACK2 || butnprs&IN_RELOAD || butnprs&IN_USE ) setVisible = true
+		// Always check these
+		if ( butnprs & gButtons ) setVisible = true
 
 		// Check movement? if greater then 1 check speed not keys
 		new Float:checkmove = get_pcvar_float(gPcvarCheckMove)
@@ -118,15 +118,11 @@ public checkButtons()
 		{
 			case 0.0: { /* 0 = no move check, do nothing */ }
 
-			case 1.0:
-			{
-				if ( butnprs&IN_JUMP ) setVisible = true
-				if ( butnprs&IN_FORWARD || butnprs&IN_BACK || butnprs&IN_LEFT || butnprs&IN_RIGHT ) setVisible = true
-				if ( butnprs&IN_MOVELEFT || butnprs&IN_MOVERIGHT ) setVisible = true
+			case 1.0: {
+				if ( butnprs & gButtonsMove ) setVisible = true
 			}
 
-			default:
-			{
+			default: {
 				//Check speed of player against the checkmove cvar
 				new Float:velocity[3]
 				pev(id, pev_velocity, velocity)
@@ -140,7 +136,7 @@ public checkButtons()
 		else {
 			//new sysTime = get_systime()
 			new Float:sysTime
-			global_get(glb_time, sysTime)
+                	global_get(glb_time, sysTime)
 			new Float:delay = get_pcvar_float(gPcvarDelay)
 
 			if ( gStillTime[id] < 0.0 ) {
@@ -166,10 +162,10 @@ public checkButtons()
 	}
 }
 //----------------------------------------------------------------------------------------------
-public invisman_damage(id)
+public client_damage(attacker, victim)
 {
-	if ( !sh_is_active() || !gHasInvisibleMan[id] ) return
+	if ( !sh_is_active() || !gHasInvisibleMan[victim] ) return
 
-	remInvisibility(id)
+	remInvisibility(victim)
 }
 //----------------------------------------------------------------------------------------------

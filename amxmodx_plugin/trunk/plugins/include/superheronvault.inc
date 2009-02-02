@@ -56,16 +56,15 @@ writeData(id)
 	static data[1501]
 	new heroIndex, len
 	new powerCount = gMemoryTablePowers[id][0]
-	new maxlen = 1500
 
 	data[0] = '^0'
 
-	len += formatex(data[len], maxlen-len, "^"%s^" %d %d", gMemoryTableNames[id], gMemoryTableXP[id], gMemoryTableFlags[id])
+	len += formatex(data[len], charsmax(data)-len, "^"%s^" %d %d", gMemoryTableNames[id], gMemoryTableXP[id], gMemoryTableFlags[id])
 
-	for ( new x = 1; x <= powerCount && x <= gSuperHeroCount && len < 1500; x++ ) {
+	for ( new x = 1; x <= powerCount && x <= gSuperHeroCount && len < charsmax(data); x++ ) {
 		heroIndex = gMemoryTablePowers[id][x]
 		if ( -1 < heroIndex < gSuperHeroCount ) {
-			len += formatex(data[len], maxlen-len, " ^"%s^"", gSuperHeros[heroIndex][hero])
+			len += formatex(data[len], charsmax(data)-len, " ^"%s^"", gSuperHeros[heroIndex][hero])
 		}
 	}
 
@@ -81,7 +80,7 @@ loadXP(id, const savekey[32])
 	static Right[1501], temp
 	Right[0] = '^0'
 
-	if ( nvault_lookup(gVaultHandle, savekey, Right, 1500, temp) ) {
+	if ( nvault_lookup(gVaultHandle, savekey, Right, charsmax(Right), temp) ) {
 		// parseXP
 
 		// "name" XP USERFLAGS "SKILL1" "SKILL2" ...
@@ -90,18 +89,18 @@ loadXP(id, const savekey[32])
 		Left[0] = '^0'
 
 		// Get the name out
-		strbrkqt(Right, Left, 31, Right, 1500)
+		strbrkqt(Right, Left, charsmax(Left), Right, charsmax(Right))
 		Left[0] = '^0'
 
 		// Get the XP out and save it
-		strbrkqt(Right, Left, 31, Right, 1500)
+		strbrkqt(Right, Left, charsmax(Left), Right, charsmax(Right))
 		gPlayerXP[id] = str_to_num(Left)
 		gPlayerLevel[id] = playerLevel = getPlayerLevel(id)
 		setLevel(id, playerLevel)
 		Left[0] = '^0'
 
 		// Get the User Flags out and save them
-		strbrkqt(Right, Left, 31, Right, 1500)
+		strbrkqt(Right, Left, charsmax(Left), Right, charsmax(Right))
 		gPlayerFlags[id] = str_to_num(Left)
 
 		// Now load in all the skills
@@ -110,7 +109,7 @@ loadXP(id, const savekey[32])
 
 		while ( Right[0] != '^0' && powerCount < maxPowers ) {
 			Left[0] = '^0'
-			strbrkqt(Right, Left, 31, Right, 1500)
+			strbrkqt(Right, Left, charsmax(Left), Right, charsmax(Right))
 			heroIndex = getHeroID(Left)
 			if ( -1 < heroIndex < gSuperHeroCount ) {
 				if ( getHeroLevel(heroIndex) <= playerLevel ) {

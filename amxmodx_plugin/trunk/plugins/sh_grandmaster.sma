@@ -98,8 +98,8 @@ public gmaster_respawn(parm[])
 	emit_sound(gmaster, CHAN_STATIC, gSoundGmaster, VOL_NORM, ATTN_NORM, 0, PITCH_NORM)
 
 	new gmasterName[32], deadName[32]
-	get_user_name(gmaster, gmasterName, 31)
-	get_user_name(dead, deadName, 31)
+	get_user_name(gmaster, gmasterName, charsmax(gmasterName))
+	get_user_name(dead, deadName, charsmax(deadName))
 	sh_chat_message(0, gHeroID, "%s used cosmic life force to Revive Dead Teammate %s!", gmasterName, deadName)
 
 	//Respawns the player best available method

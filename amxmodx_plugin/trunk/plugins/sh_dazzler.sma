@@ -73,17 +73,13 @@ public sh_hero_key(id, heroID, key)
 
 		new Float:idLevelPct = float(sh_get_user_lvl(id)) / float(sh_get_num_lvls())
 
-		new Float:num, Float:life, Float:size
-		num = 1.0 + (8.0 * idLevelPct)
-		life = 1.0 + (8.0 * idLevelPct)
-		size = 50.0 + (150.0 * idLevelPct)
+		new num = floatround(1.0 + (8.0 * idLevelPct))
+		new life = floatround(1.0 + (8.0 * idLevelPct))
+		new size = floatround(50.0 + (150.0 * idLevelPct))
 
 		// just checks to see if this may be causing server crashes...
-		if ( life < 1.0 ) life = 1.0
-		else if ( life > 10.0 ) life = 10.0
-
-		if ( size > 200.0 ) size = 200.0
-		else if ( size < 50.0 ) size = 50.0
+		life = clamp(life, 1, 10)
+		size = clamp(size, 50, 200)
 
 		// OK Power dazzle enemies closer than x distance
 		new players[SH_MAXSLOTS], playerCount, player
@@ -105,7 +101,7 @@ public sh_hero_key(id, heroID, key)
 
 				if ( distanceBetween < dazzlerRadius ) {
 					// tracer fireworks
-					dazzler_sprite_flash(toOrigin, toOrigin, floatround(num), floatround(life), floatround(size), 10)
+					dazzler_sprite_flash(toOrigin, toOrigin, num, life, size, 10)
 					dazzler_sprite_flash(fromOrigin, toOrigin, 10, 5, 10, 1000)
 
 					emit_sound(id, CHAN_STATIC, gSoundFlash, VOL_NORM, ATTN_NORM, 0, PITCH_HIGH)

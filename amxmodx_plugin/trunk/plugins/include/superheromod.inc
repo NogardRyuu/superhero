@@ -534,13 +534,11 @@ stock sh_sound_deny(id)
  */
 stock sh_switch_weapon(id, weaponID)
 {
-	if ( !sh_is_active() || !is_user_alive(id) ) return;
-
 	if ( weaponID < CSW_P228 || weaponID > CSW_P90 ) return;
 
 	if ( user_has_weapon(id, weaponID) ) {
 		static weaponName[32];
-		get_weaponname(weaponID, weaponName, 31);
+		get_weaponname(weaponID, weaponName, charsmax(weaponName));
 		engclient_cmd(id, weaponName);
 	}
 }
@@ -556,12 +554,10 @@ stock sh_switch_weapon(id, weaponID)
  * @param blue		The blue rgb color value of the fade. (0-255)
  * @param alpha		The alpha transparency value of the fade. (0-255)
  * @param type		The type of fade. (see superheroconst.inc)
- * @return		Returns 1 on success, 0 on failure.
+ * @noreturn
  */
 stock sh_screen_fade(id, Float:fadeTime, Float:holdTime, red, green, blue, alpha, type = SH_FFADE_IN)
 {
-	if ( !is_user_connected(id) ) return 0;
-
 	static msgScreenFade;
 
 	if ( !msgScreenFade ) {
@@ -569,7 +565,7 @@ stock sh_screen_fade(id, Float:fadeTime, Float:holdTime, red, green, blue, alpha
 	}
 
 	// Check unsigned short range
-	static fade, hold;
+	new fade, hold;
 	fade = clamp(floatround(fadeTime * float(1<<12)), 0, 0xFFFF);
 	hold = clamp(floatround(holdTime * float(1<<12)), 0, 0xFFFF);
 
@@ -582,8 +578,6 @@ stock sh_screen_fade(id, Float:fadeTime, Float:holdTime, red, green, blue, alpha
 	write_byte(blue);	// fade blue
 	write_byte(alpha);	// fade alpha
 	message_end();
-
-	return 1;
 }
 
 /**
@@ -593,12 +587,10 @@ stock sh_screen_fade(id, Float:fadeTime, Float:holdTime, red, green, blue, alpha
  * @param amplitude	The amount of displacement of the shake.
  * @param duration	The period of time of the shake.
  * @param frequency	The rate at which displacement of the shake is repeated.
- * @return		Returns 1 on success, 0 on failure.
+ * @noreturn
  */
 stock sh_screen_shake(id, Float:amplitude, Float:duration, Float:frequency)
 {
-	if ( !is_user_connected(id) ) return 0;
-
 	static msgScreenShake;
 
 	if ( !msgScreenShake ) {
@@ -606,7 +598,7 @@ stock sh_screen_shake(id, Float:amplitude, Float:duration, Float:frequency)
 	}
 
 	// Check unsigned short range
-	static amp, dura, freq;
+	new amp, dura, freq;
 	amp = clamp(floatround(amplitude * float(1<<12)), 0, 0xFFFF);
 	dura = clamp(floatround(duration * float(1<<12)), 0, 0xFFFF);
 	freq = clamp(floatround(frequency * float(1<<8)), 0, 0xFFFF);
@@ -616,8 +608,6 @@ stock sh_screen_shake(id, Float:amplitude, Float:duration, Float:frequency)
 	write_short(dura);	// duration
 	write_short(freq);	// frequency
 	message_end();
-
-	return 1;
 }
 
 /**
@@ -640,11 +630,10 @@ stock sh_set_rendering(entity, r = 255, g = 255, b = 255, amount = 16, fx = kRen
 {
 	if ( !pev_valid(entity) ) return 0;
 
-	static Float:alpha;
-	alpha = float(amount);
+	new Float:alpha = float(amount);
 
 	// This check is only to favor invisibility of a player over any other render expect a reset
-	if ( 0 < entity <= sh_maxplayers() ) {
+	if ( entity <= sh_maxplayers() ) {
 
 		// If client is in an alpha render do we need to block this render setting.
 		if ( pev(entity, pev_rendermode) == kRenderTransAlpha ) {
@@ -655,7 +644,7 @@ stock sh_set_rendering(entity, r = 255, g = 255, b = 255, amount = 16, fx = kRen
 				// Skip setting any other render type, allow user to stay in alpha render
 				if ( render != kRenderTransAlpha ) return 0;
 
-				static Float:currentAlpha;
+				new Float:currentAlpha;
 				pev(entity, pev_renderamt, currentAlpha);
 
 				// Only set alpha render if equal or less visible (equal to allow color changes etc.)
@@ -664,7 +653,7 @@ stock sh_set_rendering(entity, r = 255, g = 255, b = 255, amount = 16, fx = kRen
 		}
 	}
 
-	static Float:renderColor[3];
+	new Float:renderColor[3];
 	renderColor[0] = float(r);
 	renderColor[1] = float(g);
 	renderColor[2] = float(b);
@@ -687,16 +676,14 @@ stock sh_set_rendering(entity, r = 255, g = 255, b = 255, amount = 16, fx = kRen
  */
 stock sh_add_hp(id, hitPoints, maxHealth = 0)
 {
-	if ( !sh_is_active() || hitPoints == 0 ) return 0;
+	if ( hitPoints == 0 ) return 0;
 
 	if ( maxHealth == 0 ) maxHealth = sh_get_max_hp(id);
 
-	static currentHealth;
-	currentHealth = get_user_health(id);
+	new currentHealth = get_user_health(id);
 
 	if ( currentHealth < maxHealth ) {
-		static newHealth;
-		newHealth = min((currentHealth + hitPoints), maxHealth);
+		new newHealth = min((currentHealth + hitPoints), maxHealth);
 		set_user_health(id, newHealth);
 		return newHealth - currentHealth;
 	}
@@ -717,19 +704,17 @@ stock sh_add_hp(id, hitPoints, maxHealth = 0)
  */
 stock sh_add_ap(id, armorPoints, maxArmor = 0)
 {
-	if ( !sh_is_active() || armorPoints == 0 ) return 0;
+	if ( armorPoints == 0 ) return 0;
 
 	if ( maxArmor == 0 ) maxArmor = sh_get_max_ap(id);
 
-	static CsArmorType:armorType;
-	static currentArmor;
-	currentArmor = cs_get_user_armor(id, armorType);
+	new CsArmorType:armorType;
+	new currentArmor = cs_get_user_armor(id, armorType);
 
 	if ( currentArmor < maxArmor ) {
 		if ( !currentArmor ) armorType = CS_ARMOR_VESTHELM;
 
-		static newArmor;
-		newArmor = min((currentArmor + armorPoints), maxArmor);
+		new newArmor = min((currentArmor + armorPoints), maxArmor);
 		cs_set_user_armor(id, newArmor, armorType);
 		return newArmor - currentArmor;
 	}
@@ -757,7 +742,7 @@ stock sh_vip_flags()
 	if ( !sh_blockvip ) return 0;
 
 	static temp[9];
-	get_pcvar_string(sh_blockvip, temp, 8);
+	get_pcvar_string(sh_blockvip, temp, charsmax(temp));
 
 	return read_flags(temp);
 }
@@ -814,8 +799,7 @@ stock sh_get_velocity(const Float:initial[3], const Float:final[3], Float:speed,
 		sv_maxvelocity = get_cvar_pointer("sv_maxvelocity");
 	}
 
-	static Float:maxSpeed;
-	maxSpeed = get_pcvar_float(sv_maxvelocity);
+	new Float:maxSpeed = get_pcvar_float(sv_maxvelocity);
 
 	// Time = Distance / Speed
 	new Float:fTime = vector_distance(initial, final) / floatclamp(speed, -maxSpeed, maxSpeed);
@@ -993,9 +977,7 @@ stock strbrkqt(const text[], Left[], leftLen, Right[], rightLen)
  */
 stock print_heapsize()
 {
-	new heapsize[48];
-	format(heapsize, 47, "[SH] HeapSize: %i", heapspace());
-	server_print(heapsize);
+	server_print("[SH] HeapSize: %i", heapspace());
 }
 
 
@@ -1073,7 +1055,7 @@ stock shSetMaxSpeed(const heroName[], const heroSpeedCVAR[], weaponString[])
 
 				default: {
 					//Single out weapon number
-					add(number, 2, weaponString[i]);
+					add(number, charsmax(number), weaponString[i]);
 				}
 			}
 		}
@@ -1128,7 +1110,12 @@ stock shSetMinGravity(const heroName[], const heroGravityCVAR[])
 #define shGiveWeaponID sh_give_weapon
 
 //stock shSwitchWeaponID(id, weaponID)
-#define shSwitchWeaponID sh_switch_weapon
+stock shSwitchWeaponID(id, weaponID)
+{
+	if ( !is_user_alive(id) ) return;
+
+	sh_switch_weapon(id, weaponID);
+}
 
 //stock shOwnsWeaponID(id, weaponID)
 #define shOwnsWeaponID user_has_weapon
@@ -1140,7 +1127,12 @@ stock shSetMinGravity(const heroName[], const heroGravityCVAR[])
 #define shUnglow sh_set_rendering
 
 //stock shAddHPs(id, hitPoints, maxHealth = 100)
-#define shAddHPs sh_add_hp
+stock shAddHPs(id, hitPoints, maxHealth = 100)
+{
+	if ( !sh_is_active() ) return;
+
+	sh_add_hp(id, hitPoints, maxHealth);
+}
 
 //stock shStun(id, secs)
 stock shStun(id, secs)
@@ -1171,6 +1163,8 @@ stock shGlow(id, r, g, b)
 #define sh_setScreenFlash setScreenFlash
 stock setScreenFlash(id, red, green, blue, decisecs, alpha)
 {
+	if ( !is_user_connected(id) ) return;
+
 	sh_screen_fade(id, float(decisecs)/10.0, float(decisecs)/20.0, red, green, blue, alpha);
 }
 
@@ -1179,6 +1173,8 @@ stock setScreenFlash(id, red, green, blue, decisecs, alpha)
 #define sh_screenShake setScreenShake
 stock setScreenShake(id, amplitude, duration, frequency)
 {
+	if ( !is_user_connected(id) ) return;
+
 	sh_screen_shake(id, float(amplitude)/10.0, float(duration)/10.0, float(frequency)/10.0);
 }
 

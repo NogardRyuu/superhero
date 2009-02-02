@@ -78,28 +78,28 @@ public handle_say(id)
 	if ( !sh_is_active() || !is_user_connected(id) || !get_pcvar_num(gPcvarShowChat) ) return
 
 	new message[191]
-	read_argv(1, message, 190)
+	read_argv(1, message, charsmax(message))
 
-	if ( equal(message, "") || equal(message, "[") ) return
+	if ( message[0] == '^0' || equal(message, "[") ) return
 
-	new command[10], players[SH_MAXSLOTS], player_count, user
-	new teamname[5], idName[33], sMessage[191]
+	new command[9], players[SH_MAXSLOTS], player_count, user
+	new teamname[7], idName[32], sMessage[192]
 
-	read_argv(0, command, 16)
+	read_argv(0, command, charsmax(command))
 	new idSayTeam = equal(command, "say_team")
 
 	new idAlive = is_user_alive(id)
 	new CsTeams:idTeam = cs_get_user_team(id)
 
 	switch(idTeam) {
-		case CS_TEAM_T: copy(teamname, 4, "(T)")
-		case CS_TEAM_CT: copy(teamname, 4, "(CT)")
-		default: copy(teamname, 4, "(SPEC)")
+		case CS_TEAM_T: copy(teamname, charsmax(teamname), "(T)")
+		case CS_TEAM_CT: copy(teamname, charsmax(teamname), "(CT)")
+		default: copy(teamname, charsmax(teamname), "(SPEC)")
 	}
 
-	get_user_name(id, idName, 32)
+	get_user_name(id, idName, charsmax(idName))
 
-	format(sMessage, 190, "%c[DN]%s%s%s :  %s^n", 2,  idSayTeam ? teamname : "", idAlive ? "*ALIVE*" : "*DEAD*", idName, message)
+	formatex(sMessage, charsmax(sMessage), "%c[DN]%s%s%s :  %s^n", 2, idSayTeam ? teamname : "", idAlive ? "*ALIVE*" : "*DEAD*", idName, message)
 
 	// Get all alive players but skip bots
 	get_players(players, player_count, "ach")

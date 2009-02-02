@@ -87,7 +87,7 @@ magneto_disarm(id, victim)
 	new Float:velocity[3]
 
 	pev(victim, pev_velocity, velocity)
-	velocity[2] = velocity[2] + get_pcvar_float(pCvarBoost)
+	velocity[2] += get_pcvar_float(pCvarBoost)
 
 	// Give em an upwards Jolt
 	set_pev(victim, pev_velocity, velocity)
@@ -114,7 +114,7 @@ magneto_disarm(id, victim)
 	lightning_effect(id, victim)
 
 	new name[32]
-	get_user_name(id, name, 31)
+	get_user_name(id, name, charsmax(name))
 
 	sh_chat_message(victim, gHeroID, "%s has removed your weapons", name)
 }
