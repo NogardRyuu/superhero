@@ -32,7 +32,9 @@ new gLaserShots[SH_MAXSLOTS+1]
 new gLastWeapon[SH_MAXSLOTS+1]
 new const gSoundLaser[] = "weapons/electro5.wav"
 new const gSoundHit[] = "weapons/xbow_hitbod2.wav"
-new gBurnDecal[5] = {199, 200, 201, 202, 203}
+//cs decals = 199, 200, 201, 202, 203
+//cz decals = 211, 212, 213, 214, 215
+new gBurnDecal
 new gSpriteSmoke, gSpriteLaser
 new gPcvarLaserAmmo, gPcvarBurnDecals, gPcvarCooldown, gPcvarMultiShot
 //----------------------------------------------------------------------------------------------
@@ -53,10 +55,8 @@ public plugin_init()
 	sh_set_hero_info(gHeroID, "Optic Blast", "Press the +power key to fire your optic laser beam")
 	sh_set_hero_bind(gHeroID)
 
-	// Set to correct burn decals if mod is CZ
-	new mod_name[9]
-	get_modname(mod_name, charsmax(mod_name))
-	if ( equal(mod_name, "czero") ) gBurnDecal = {211, 212, 213, 214, 215}
+	// Set to correct burn decals if mod is CZ or CS
+	gBurnDecal = engfunc(EngFunc_DecalIndex, "{bigshot5")
 }
 //----------------------------------------------------------------------------------------------
 public plugin_precache()
@@ -262,7 +262,7 @@ laser_effects(id, aimvec[3])
 		write_coord(aimvec[1])
 		write_coord(aimvec[2])
 		write_short(0)		// I have no idea what thats supposed to be
-		write_byte(gBurnDecal[random_num(0, 4)])	//decal
+		write_byte(gBurnDecal + random_num(0, 4))	//decal
 		message_end()
 	}
 }

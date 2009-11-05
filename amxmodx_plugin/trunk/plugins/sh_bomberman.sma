@@ -23,7 +23,7 @@ new bool:gHasBomberman[SH_MAXSLOTS+1]
 new gBombEntity[SH_MAXSLOTS+1]
 new gBombAmmo[SH_MAXSLOTS+1]
 new const gSoundBombPlant[] = "weapons/c4_plant.wav"
-new gBombModel[32]
+new gBombModel[32] = "models/shmod/bomberman_bomb.mdl"
 new gSpriteSmoke, gSpriteWhite, gSpriteFire, gSpriteExplode
 new gPcvarLevel, gPcvarCooldown, gPcvarBombs
 new gPcvarBPL, gPcvarRadius, gPcvarMaxDamage
@@ -50,11 +50,8 @@ public plugin_init()
 public plugin_precache()
 {
 	// What Skin Is The Bomb Gonna Have
-	if ( file_exists("models/shmod/bomberman_bomb.mdl") ) {
-		copy(gBombModel, 31, "models/shmod/bomberman_bomb.mdl")
-	}
-	else {
-		copy(gBombModel, 31, "models/w_c4.mdl")
+	if ( !file_exists(gBombModel) ) {
+		copy(gBombModel, charsmax(gBombModel), "models/w_c4.mdl")
 	}
 
 	precache_model(gBombModel)
