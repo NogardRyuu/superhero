@@ -27,7 +27,7 @@
 //----------------------------------------------------------------------------------------------
 
 #define SH_VERSION		1.20
-stock const SH_VERSION_STR[] =	"1.2.0.10";
+stock const SH_VERSION_STR[] =	"1.2.0.14";
 
 // Cooldown task id, required to allow core to stop task
 #define SH_COOLDOWN_TASKID	572910
@@ -71,8 +71,8 @@ stock const SH_VERSION_STR[] =	"1.2.0.10";
 #define VIP_BLOCK_CUSTOM	(1<<7)	/* flag "h" */	// Custom VIP block, heroes can use for whatever they want
 
 // From multiplayer/dlls/player.cpp (Note: Actual CS calculation is unknown)
-#define SH_ARMOR_RATIO		0.2	// Armor Takes 80% of the damage (0.2 in the SDK)
-#define SH_ARMOR_BONUS		0.5	// Each Point of Armor is worth 1/x points of health (0.5 in the SDK)
+#define SH_ARMOR_RATIO		0.5	// Armor Takes 50% of the damage (0.2 in the HL SDK)
+#define SH_ARMOR_BONUS		0.5	// Each Point of Armor is worth 1/x points of health (0.5 in the HL SDK)
 
 // Common sound for denying power use, precached by core
 stock const gSoundDeny[] = 	"common/wpn_denyselect.wav";

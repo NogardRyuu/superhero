@@ -133,7 +133,7 @@ native sh_get_num_lvls();
  * Gets the XP required for the level.
  *
  * @param level		The level number to check.
- * @return		The XP needed for the level.
+ * @return		The XP needed for the level, else -1 if not a valid level.
  */
 native sh_get_lvl_xp(level);
 
@@ -141,7 +141,7 @@ native sh_get_lvl_xp(level);
  * Gets the client's current level.
  *
  * @param id		The index of the client.
- * @return		The current level of the client.
+ * @return		The current level of the client, else -1 if not a valid id.
  */
 native sh_get_user_lvl(id);
 
@@ -187,7 +187,7 @@ native sh_add_kill_xp(id, victim, Float:multiplier = 1.0);
  * Gets the client's max Health based on heroes client has.
  *
  * @param id		The index of the client.
- * @return		The max hero HP of the client.
+ * @return		The max hero HP of the client, else 0 if invalid client.
  */
 native sh_get_max_hp(id);
 
@@ -195,7 +195,7 @@ native sh_get_max_hp(id);
  * Gets the client's max SuperHero Armor.
  *
  * @param id		The index of the client.
- * @return		The max hero AP of the client.
+ * @return		The max hero AP of the client, else 0 if invalid client.
  */
 native sh_get_max_ap(id);
 
@@ -284,7 +284,7 @@ native sh_set_hero_speed(heroID, pcvarSpeed, const weapons[] = {0}, numofwpns = 
  * {29, 30} would equal the CSW_ weapon constants corresponding to {CSW_KNIFE, CSW_P90}, etc... (see amxconst.inc)
  *
  * @note		A Gravity value 0.0 or below is ignored, 1.0 is normal gravity (800).
- *				***Weapon based gravity is not implented yet. Maybe in next version, undecided.***
+ *				***Weapon based gravity is not implemented yet. Maybe in next version, undecided.***
  *
  * @param heroID	The index of the hero.
  * @param pcvarGravity	The pcvar value for minimum Gravity CVAR for the hero.
@@ -293,6 +293,22 @@ native sh_set_hero_speed(heroID, pcvarSpeed, const weapons[] = {0}, numofwpns = 
  * @noreturn
  */
 native sh_set_hero_grav(heroID, pcvarGravity, const weapons[] = {0}, numofwpns = 1);
+
+
+/**
+ * Sets hero's damage multiplier for the specified cs/cz weapon. (Optional)
+ * Multipliers do not stack, values from user's heroes are compared and greatest is applied.
+ * If multiple weapons required, native must be called separately for each weapon.
+ *
+ * @note		A Multiplier value of 1.0 or below is ignored.
+ *				Multiplier is applied before armor reduces damage.
+ *
+ * @param heroID	The index of the hero.
+ * @param pcvarSpeed	The pcvar value of the damage multiplier CVAR for the specified weaponID.
+ * @param weaponID	The CSW_ constant of the weapon to set damage multiplier for, 0 is for all weapons. (see amxconst.inc)
+ * @noreturn
+ */
+native sh_set_hero_dmgmult(heroID, pcvarWpnMult, const weaponID = 0);
 
 //------------
 

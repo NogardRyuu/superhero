@@ -12,7 +12,7 @@
 
 /****************************************************************************
 *
-*   Version 1.2.1 - Date: ??/??/200?
+*   Version 1.2.1 - Date: ??/??/20??
 *
 *   Original by {HOJ} Batman <johnbroderick@sbcglobal.net>
 *
@@ -52,6 +52,12 @@
 *
 *  v1.2.1 - vittu - ??/??/??
 *	- 
+*	- Changed SH_ARMOR_RATIO to 0.5 since in cs armor seems to reduce damage by 50% not 80%
+*	- Added native sh_set_hero_dmgmult for weapon multipliers to directly hook damage instead of faking damage with sh_extra_damage
+*	- Added removal of all Monster Mod monsters on new round, stops monster freezetime attacks
+*	- Added option to force save by IP or save by name with cvar sh_saveby 
+*	- Added option for Free For All servers to gain money/frags/xp on tk instead of losing money/frags/xp on tk with cvar sh_ffa
+*	- Fixed shield restrict forcing drop of shield to actually drop shield not just active weapon
 *	- Removed /savexp say command due to complaint of the xp removal it has done since version 1.17.4
 *	- Converted superheromysql.inc to use sqlx instead of dbi and optimized a bit
 *	- Fixed passing of some buffers into format routines
@@ -330,17 +336,16 @@
 *
 *  To-Do:
 *
-*	- Admin menu for giving XP / levels / etc. Also for resetting and other admin commands. (seperate plugin).
-*	- Config file to make heroes only available to certian access flags.
+*	- Admin menu for giving XP / levels / etc. Also for resetting and other admin commands. (separate plugin).
+*	- Config file to make heroes only available to certain access flags.
 *	- Create a Block weapon fire/sound/animation for laser type heroes instead of having them switch to knife.
+*	- Look into blocking power key use native maybe by user / hero id.
 *	- Find different method to indicate sh_set_godmode (remove forced blue glow).
 *	- CVAR for old style XP modding - how fast to level ("slow", "medium", "fast", "normal", "long").
 *	- Make superhero IDs start at 1 not 0.
 *	- Get rid of binaries tables in mysql.
 *	- Make command to autogenerate ini up to X levels.
 *	- Save sh bans using flag into saved data instead of the ban file (possible issue with nvault, and that data must be saved then).
-*	- Either set clients as no target or kill off all monsters at round end (so monsters don't attack at freezetime).
-*	- Create a hero based weapon multiplier setting similar to hero speed and gravity.
 *	- Add gravity settings based on current weapon (incomplete currently).
 *	- Make use of multilingual support for "core" messages only.
 *	- Remove all use of set_user_info, find a better method to tell when a power is in use (possibly native so hero can say it's in use).
@@ -349,9 +354,12 @@
 *	- Add chosen hero child page to menu to verify hero choice, but mainly to add hero info there instead of using hud messages for powerHelp info.
 *	- Find a better method for blocking shield with primary bug or refine currently used one.
 *	- Clean up any issues with the say commands.
-*	- CVAR / define for saving XP by name (very low priority).
 *	- Possibly use threading only for mysql saving at round end (may require too much recoding).
 *	- Convert the read_file usage in superheromysql.inc to use new file natives.
+*	- Add check to skip power key if pressed too fast to stop aliasing multiple power keys at the same time.
+*	- Make sh more csdm/respawn friendly, remove reliance on round ending
+* 	- Improve sh_minplayersxp to count only players that are on a team
+* 	- Make restricting bonus xp bomb tracking optional
 *
 **************************************************************************/
 
@@ -383,12 +391,13 @@ new gSuperHeroCount = 0
 
 // Changed these from CVARS to straight numbers...
 new gHeroMaxSpeed[SH_MAXHEROS]
-new gHeroSpeedWeapons[SH_MAXHEROS][32] // array weapons of weapon's i.e. {4,31} Note:{0}=all
+new gHeroSpeedWeapons[SH_MAXHEROS][31] // array weapons of weapon's i.e. {4,30} Note:{0}=all
 new gHeroMaxHealth[SH_MAXHEROS]
 new gHeroMinGravity[SH_MAXHEROS]
 new gHeroMaxArmor[SH_MAXHEROS]
 new bool:gHeroShieldRest[SH_MAXHEROS]
 new gHeroLevelCVAR[SH_MAXHEROS]
+new gHeroMaxDamageMult[SH_MAXHEROS][31]
 
 //CVARS to be loaded into variables
 new bool:gAutoBalance
@@ -428,6 +437,7 @@ new gMaxHealth[SH_MAXSLOTS+1]
 new gMaxArmor[SH_MAXSLOTS+1]
 new bool:gPlayerPutInServer[SH_MAXSLOTS+1]
 new gXpBounsVIP
+//new Float:gLastKeydown[SH_MAXSLOTS+1]
 
 // Other miscellaneous global variables
 new gHelpHudMsg[340]
@@ -451,6 +461,7 @@ new gXrtaDmgAttacker
 new gXrtaDmgHeadshot
 new bool:gIsCzero
 new bool:gCZBotRegisterHam
+new bool:gMonsterModRunning
 
 //Memory Table Variables
 new gMemoryTableCount = 33
@@ -467,7 +478,7 @@ new gSHConfigDir[128], gBanFile[128], gSHConfig[128], gHelpMotd[128]
 new sv_superheros, sh_adminaccess, sh_alivedrop, sh_autobalance, sh_objectivexp
 new sh_cmdprojector, sh_debug_messages, sh_endroundsave, sh_hsmult, sh_loadimmediate, sh_lvllimit
 new sh_maxbinds, sh_maxpowers, sh_menumode, sh_mercyxp, sh_mercyxpmode, sh_minlevel
-new sh_savexp, sh_xpsavedays, sh_minplrsbhxp, sh_reloadmode, sh_blockvip
+new sh_savexp, sh_saveby, sh_xpsavedays, sh_minplrsbhxp, sh_reloadmode, sh_blockvip, sh_ffa
 new mp_friendlyfire, sv_maxspeed, sv_lan, bot_quota
 
 //Forwards
@@ -549,10 +560,12 @@ public plugin_init()
 	sh_mercyxpmode = register_cvar("sh_mercyxpmode", "1")
 	sh_minlevel = register_cvar("sh_minlevel", "0")
 	sh_savexp = register_cvar("sh_savexp", "1")
+	sh_saveby = register_cvar("sh_saveby", "1")
 	sh_xpsavedays = register_cvar("sh_xpsavedays", "14")
 	sh_reloadmode = register_cvar("sh_reloadmode", "1")
 	sh_minplrsbhxp = register_cvar("sh_minplayersxp", "2")
 	sh_blockvip = register_cvar("sh_blockvip", "abcdef")
+	sh_ffa = register_cvar("sh_ffa", "0")
 
 	// Server cvars checked by core
 	mp_friendlyfire = get_cvar_pointer("mp_friendlyfire")
@@ -604,7 +617,9 @@ public plugin_init()
 	register_logevent("vip_Escaped", 6, "3=VIP_Escaped")
 
 	// Must use post or else is_user_alive will return false when dead player respawns
-	RegisterHam(Ham_Spawn, "player", "ham_PlayerSpawn", 1)	// cz bots won't hook here must RegisterHamFromEntity
+	// cz bots won't hook here must RegisterHamFromEntity
+	RegisterHam(Ham_Spawn, "player", "ham_PlayerSpawn_Post", 1)
+	RegisterHam(Ham_TakeDamage, "player", "ham_TakeDamage_Pre")
 
 	// Events to catch shield buying
 	// Old Style Menus
@@ -707,6 +722,7 @@ public plugin_natives()
 	register_native("sh_set_hero_hpap", "_sh_set_hero_hpap")
 	register_native("sh_set_hero_speed", "_sh_set_hero_speed")
 	register_native("sh_set_hero_grav", "_sh_set_hero_grav")
+	register_native("sh_set_hero_dmgmult", "_sh_set_hero_dmgmult")
 	register_native("sh_get_max_ap", "_sh_get_max_ap")
 	register_native("sh_get_max_hp", "_sh_get_max_hp")
 	register_native("sh_get_num_lvls", "_sh_get_num_lvls")
@@ -801,6 +817,10 @@ public plugin_cfg()
 	set_task(3.0, "setHeroLevels")
 	set_task(5.0, "setSvMaxspeed")
 	set_task(5.0, "cvarCheck")
+
+	if ( cvar_exists("monster_spawn") ) {
+		gMonsterModRunning = true
+	}
 }
 //----------------------------------------------------------------------------------------------
 setupConfig()
@@ -1024,6 +1044,9 @@ public _sh_get_lvl_xp()
 {
 	new level = get_param(1)
 
+	//stupid check - but checking prevents crashes
+	if ( level < 0 || level > gNumLevels ) return -1
+
 	return gXPLevel[level]
 }
 //----------------------------------------------------------------------------------------------
@@ -1035,6 +1058,9 @@ public _sh_get_user_lvl()
 	//stupid check - but checking prevents crashes
 	if ( id < 1 || id > gServersMaxPlayers ) return -1
 
+	//Check if data has loaded yet
+	//if ( gReadXPNextRound[id] ) return -1
+
 	return gPlayerLevel[id]
 }
 //----------------------------------------------------------------------------------------------
@@ -1042,6 +1068,10 @@ public _sh_get_user_lvl()
 public _sh_get_max_hp()
 {
 	new id = get_param(1)
+
+	//stupid check - but checking prevents crashes
+	if ( id < 1 || id > gServersMaxPlayers ) return 0
+
 	return gMaxHealth[id]
 }
 //----------------------------------------------------------------------------------------------
@@ -1049,6 +1079,10 @@ public _sh_get_max_hp()
 public _sh_get_max_ap()
 {
 	new id = get_param(1)
+
+	//stupid check - but checking prevents crashes
+	if ( id < 1 || id > gServersMaxPlayers ) return 0
+
 	return gMaxArmor[id]
 }
 //----------------------------------------------------------------------------------------------
@@ -1062,9 +1096,7 @@ public _sh_set_user_lvl()
 
 	new setlevel = get_param(2)
 
-	if ( setlevel < 0 || setlevel > gNumLevels ) {
-		return -1
-	}
+	if ( setlevel < 0 || setlevel > gNumLevels ) return -1
 
 	gPlayerXP[id] = gXPLevel[setlevel]
 	displayPowers(id, false)
@@ -1529,7 +1561,7 @@ initHero(id, heroIndex, mode)
 		//If they are alive make sure they don't have a shield already
 		if ( gShieldRestrict[id] && is_user_alive(id) ) {
 			if ( cs_get_user_shield(id) ) {
-				engclient_cmd(id, "drop")
+				engclient_cmd(id, "drop", "weapon_shield")
 			}
 		}
 	}
@@ -1611,7 +1643,7 @@ public _sh_set_hero_speed()
 	new pcvarSpeed = get_param(2)
 	new numWpns = get_param(4)
 
-	new pWeapons[32]
+	new pWeapons[31]
 	get_array(3, pWeapons, numWpns)
 
 	//Avoid running this unless debug is high enough
@@ -1692,7 +1724,7 @@ Float:getMaxSpeed(id, weapon)
 			if ( !heroSpeedPointer ) continue
 			heroSpeed = get_pcvar_float(heroSpeedPointer)
 			if ( heroSpeed > 0.0 ) {
-				for ( i = 0; i < 32; i++ ) {
+				for ( i = 0; i < 31; i++ ) {
 					heroWeapon = gHeroSpeedWeapons[heroIndex][i]
 
 					//Stop checking, end of list
@@ -2117,7 +2149,7 @@ public cl_superpowermenu(id)
 	menuSuperPowers(id, 0)
 }
 //----------------------------------------------------------------------------------------------
-public ham_PlayerSpawn(id)
+public ham_PlayerSpawn_Post(id)
 {
 	if ( !get_pcvar_num(sv_superheros) ) return HAM_IGNORED
 
@@ -2223,6 +2255,17 @@ public event_HLTV()
 	gRoundFreeze = true
 	gRoundStarted = false
 
+	//Remove all Monster Mod monsters, stops them from attacking during freezetime
+	if ( gMonsterModRunning ) {
+		new flags, monster = -1
+		while ( (monster = engfunc(EngFunc_FindEntityByString, monster, "classname", "func_wall")) != 0 ) {
+        		flags = pev(monster, pev_flags)
+        		if ( flags & FL_MONSTER ) {
+            			set_pev(monster, pev_flags, flags | FL_KILLME)
+			}
+		}
+	}
+
 	//Lets let all the heroes know
 	ExecuteForward(fwd_NewRound, fwdReturn)
 }
@@ -2307,6 +2350,11 @@ public cl_fullupdate(id)
 public powerKeyDown(id)
 {
 	if ( !get_pcvar_num(sv_superheros) || !is_user_connected(id) ) return PLUGIN_HANDLED
+
+	// re-entrency check to prevent aliasing muliple powerkeys - currently untested
+	//new Float:gametime = get_gametime()
+	//if ( gametime - gLastKeydown[id] < 0.2 ) return PLUGIN_HANDLED
+	//gLastKeydown[id] = gametime
 
 	new cmd[12], whichKey
 	read_argv(0, cmd, charsmax(cmd))
@@ -2729,6 +2777,80 @@ public _sh_add_kill_xp()
 	displayPowers(id, false)
 }
 //----------------------------------------------------------------------------------------------
+//native sh_set_hero_dmgmult(heroID, pcvarDamage, const weaponID = 0)
+public _sh_set_hero_dmgmult()
+{
+	new heroIndex = get_param(1)
+
+	if ( heroIndex < 0 || heroIndex >= gSuperHeroCount ) return
+
+	new pcvarDamageMult = get_param(2)
+	new weaponID = get_param(3)
+
+	debugMsg(0, 3, "Set Damage Multiplier -> HeroID: %d - Multiplier: %d - Weapon: %d", heroIndex, get_pcvar_num(pcvarDamageMult), weaponID)
+
+	gHeroMaxDamageMult[heroIndex][weaponID] = pcvarDamageMult // pCVAR expected!
+}
+//----------------------------------------------------------------------------------------------
+Float:getMaxDamageMult(id, weaponID)
+{
+	if ( id == gXpBounsVIP && getVipFlags() & VIP_BLOCK_EXTRADMG ) return 1.0
+
+	static Float:returnDmgMult, x
+	static playerpowercount, heroIndex, heroDmgMultPointer
+	returnDmgMult = 1.0
+	playerpowercount = getPowerCount(id)
+
+	for ( x = 1; x <= playerpowercount; x++ ) {
+		heroIndex = gPlayerPowers[id][x]
+		if ( -1 < heroIndex < gSuperHeroCount ) {
+			// Check hero for All weapons wildcard first
+			heroDmgMultPointer = gHeroMaxDamageMult[heroIndex][0]
+			if ( !heroDmgMultPointer ) {
+				// Check hero for weapon that was passed in
+				heroDmgMultPointer = gHeroMaxDamageMult[heroIndex][weaponID]
+
+				if ( !heroDmgMultPointer ) continue
+			}
+
+			returnDmgMult = floatmax(returnDmgMult, get_pcvar_float(heroDmgMultPointer))
+		}
+	}
+
+	return returnDmgMult
+}
+//----------------------------------------------------------------------------------------------
+public ham_TakeDamage_Pre(victim, inflictor, attacker, Float:damage, damagebits)
+{
+	if ( damage <= 0.0 ) return HAM_IGNORED
+	if ( !is_user_connected(attacker) || !is_user_alive(victim) ) return HAM_IGNORED
+	//if ( victim != attacker && cs_get_user_team(victim) == cs_get_user_team(attacker) && !get_pcvar_num(sh_ffa) ) return HAM_IGNORED
+	if ( attacker == gXpBounsVIP && getVipFlags() & VIP_BLOCK_EXTRADMG ) return HAM_IGNORED
+
+	new weaponID
+	if ( damagebits & (1<<24) )
+	{
+		weaponID = CSW_HEGRENADE
+	}
+	else if ( damagebits & DMG_BULLET && inflictor == attacker )
+	{
+		//includes knife and any other weapon
+		weaponID = get_user_weapon(attacker)
+	}
+
+	//Damage not from a CS weapon
+	if ( !weaponID ) return HAM_IGNORED
+
+	new Float:dmgmult = getMaxDamageMult(attacker, weaponID)
+
+	//Damage is not increased damage
+	if ( dmgmult <= 1.0 ) return HAM_IGNORED
+
+	SetHamParamFloat(4, (damage * dmgmult))
+
+	return HAM_HANDLED
+}
+//----------------------------------------------------------------------------------------------
 //native sh_extra_damage(victim, attacker, damage, const wpnDescription[], headshot = 0, dmgMode = SH_DMG_MULT, bool:dmgStun = false, bool:dmgFFmsg = true, const dmgOrigin[3] = {0,0,0});
 public _sh_extra_damage()
 {
@@ -2778,6 +2900,7 @@ public _sh_extra_damage()
 
 	new newHealth = health - damage
 	new FFon = get_pcvar_num(mp_friendlyfire)
+	new freeforall = get_pcvar_num(sh_ffa)
 	new CsTeams:victimTeam = cs_get_user_team(victim)
 	new CsTeams:attackerTeam = cs_get_user_team(attacker)
 
@@ -2790,24 +2913,7 @@ public _sh_extra_damage()
 		if ( victim == attacker ) {
 			kill = true
 		}
-		else if ( FFon && victimTeam == attackerTeam ) {
-			kill = true
-
-			localAddXP(attacker, -gXPGiven[gPlayerLevel[attacker]])
-
-			gBlockMercyXp[attacker] = true
-
-			set_user_frags(attacker, --attackerFrags)
-
-			client_print(attacker, print_center, "You killed a teammate")
-
-			// Teamkill removes $3300, make sure not to go under min
-			if ( attackerMoney > 0 ) {
-				new money = max((attackerMoney - 3300), 0)
-				cs_set_user_money(attacker, money, 1)
-			}
-		}
-		else if ( victimTeam != attackerTeam ) {
+		else if ( victimTeam != attackerTeam || ( FFon && freeforall ) ) {
 			kill = true
 
 			new Float:hsmult = get_pcvar_float(sh_hsmult)
@@ -2823,6 +2929,23 @@ public _sh_extra_damage()
 			// Frag gives $300, make sure not to go over max
 			if ( attackerMoney < 16000 ) {
 				new money = min((attackerMoney + 300), 16000)
+				cs_set_user_money(attacker, money, 1)
+			}
+		}
+		else if ( FFon ) {
+			kill = true
+
+			localAddXP(attacker, -gXPGiven[gPlayerLevel[attacker]])
+
+			gBlockMercyXp[attacker] = true
+
+			set_user_frags(attacker, --attackerFrags)
+
+			client_print(attacker, print_center, "You killed a teammate")
+
+			// Teamkill removes $3300, make sure not to go under min
+			if ( attackerMoney > 0 ) {
+				new money = max((attackerMoney - 3300), 0)
 				cs_set_user_money(attacker, money, 1)
 			}
 		}
@@ -2880,10 +3003,10 @@ public _sh_extra_damage()
 	}
 	else {
 		new bool:hurt = false
-		if ( victimTeam != attackerTeam || victim == attacker ) {
+		if ( victimTeam != attackerTeam || victim == attacker || ( FFon && freeforall ) ) {
 			hurt = true
 		}
-		else if ( FFon && victimTeam == attackerTeam ) {
+		else if ( FFon ) {
 			hurt = true
 			//new bool:dmgFFmsg = get_param(6) ? true : false
 			if ( get_param(8) ) {
@@ -3011,7 +3134,7 @@ public event_DeathMsg()
 	// Kill by extra damage will be skipped here since killer is self
 	if ( killer && killer != victim && victim ) {
 
-		if ( cs_get_user_team(killer) == cs_get_user_team(victim) ) {
+		if ( cs_get_user_team(killer) == cs_get_user_team(victim) && !get_pcvar_num(sh_ffa) ) {
 			// Killed teammate
 			gBlockMercyXp[killer] = true
 			localAddXP(killer, -gXPGiven[gPlayerLevel[killer]])
@@ -4317,13 +4440,14 @@ public czbotHookHam(id)
 	// Make sure it's a bot and if quota greater than 0 it's a cz bot.
 	if ( pev(id, pev_flags) & FL_FAKECLIENT && get_pcvar_num(bot_quota) > 0) {
 		// Post-spawn fix for cz bots, since RegisterHam does not work for them.
-		RegisterHamFromEntity(Ham_Spawn, id, "ham_PlayerSpawn", 1)
+		RegisterHamFromEntity(Ham_Spawn, id, "ham_PlayerSpawn_Post", 1)
+		RegisterHamFromEntity(Ham_TakeDamage, id, "ham_TakeDamage_Pre")
 
 		gCZBotRegisterHam = true
 
 		// Incase this CZ bot was spawned alive during a round, call the Ham_Spawn
 		// because it would have happned before the RegisterHam.
-		if ( is_user_alive(id) ) ham_PlayerSpawn(id)
+		if ( is_user_alive(id) ) ham_PlayerSpawn_Post(id)
 	}
 }
 //----------------------------------------------------------------------------------------------
@@ -4784,24 +4908,46 @@ getSaveKey(id, savekey[32])
 			formatex(savekey, charsmax(savekey), "[BOT]%s", botname)
 		}
 	}
-	// Hack for STEAM's retardedness with listen servers
-	else if ( !is_dedicated_server() && id == 1 ) {
-		copy(savekey, charsmax(savekey), "loopback")
-	}
-	else {
-		if ( get_pcvar_num(sv_lan) ) {
-			get_user_ip(id, savekey, charsmax(savekey), 1)		// by ip without port
-		}
-		else {
-			get_user_authid(id, savekey, charsmax(savekey))		// by steamid
-			if ( equal(savekey[9], "LAN") || equal(savekey, "4294967295") ) {
-				get_user_ip(id, savekey, charsmax(savekey), 1)	// by ip without port
+	else {	
+		switch( get_pcvar_num(sh_saveby) )
+		{
+			//Forced save XP by name
+			case 0: {
+				get_user_name(id, savekey, charsmax(savekey))
+			}
+
+			//Auto Detect, save XP by SteamID or IP if LAN (default)
+			case 1: {
+				// Hack for STEAM's retardedness with listen servers
+				if ( id == 1 && !is_dedicated_server() ) {
+					copy(savekey, charsmax(savekey), "loopback")
+				}
+				else if ( get_pcvar_num(sv_lan) ) {
+					get_user_ip(id, savekey, charsmax(savekey), 1)		// by ip without port
+				}
+				else {
+					get_user_authid(id, savekey, charsmax(savekey))		// by steamid
+
+					//Check both STEAM_ID_ and VALVE_ID_
+					if ( equal(savekey[9], "LAN") ) {
+						get_user_ip(id, savekey, charsmax(savekey), 1)	// by ip without port
+					}
+					else if ( equal(savekey[9], "PENDING") ) {
+						// steamid not loaded yet, try again
+						return false
+					}
+				}
+			}
+
+			//Forced save XP by IP
+			case 2: {
+				get_user_ip(id, savekey, charsmax(savekey), 1)
 			}
 		}
 	}
 
 	// Check to make sure we got something useable
-	if ( equal(savekey[9], "PENDING") || savekey[0] == '^0' ) return false
+	if ( savekey[0] == '^0' ) return false
 
 	return true
 }
