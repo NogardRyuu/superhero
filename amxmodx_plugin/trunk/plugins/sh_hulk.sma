@@ -77,59 +77,57 @@ public sh_client_death(victim)
 //----------------------------------------------------------------------------------------------
 public sh_hero_key(id, heroID, key)
 {
-	if ( gHeroID != heroID || !sh_is_inround() ) return
+	if ( gHeroID != heroID || key != SH_KEYDOWN || !sh_is_inround() ) return
 	if ( !is_user_alive(id) || !gHasHulk[id] ) return
 
-	if ( key == SH_KEYDOWN ) {
-		new Float:velocity[3]
-		pev(id, pev_velocity, velocity)
+	new Float:velocity[3]
+	pev(id, pev_velocity, velocity)
 
-		// Hulk should technically be standing still to do this...  (i.e. no jump or air)
-		// Let them know they already used their ultimate if they have
-		if ( velocity[2] < -10.0 || velocity[2] > 10.0 || gPlayerInCooldown[id] ) {
-			sh_sound_deny(id)
-			return
-		}
+	// Hulk should technically be standing still to do this...  (i.e. no jump or air)
+	// Let them know they already used their ultimate if they have
+	if ( velocity[2] < -10.0 || velocity[2] > 10.0 || gPlayerInCooldown[id] ) {
+		sh_sound_deny(id)
+		return
+	}
 
-		// OK Power stomp enemies closer than x distance
-		new Float:userOrigin[3], Float:victimOrigin[3], Float:distanceBetween
-		new Float:hulkRadius = get_pcvar_float(gPcvarRadius)
-		new Float:hulkStunTime = get_pcvar_float(gPcvarStunTime)
-		new Float:hulkStunSpeed = get_pcvar_float(gPcvarStunSpeed)
-		new CsTeams:idTeam = cs_get_user_team(id)
+	// OK Power stomp enemies closer than x distance
+	new Float:userOrigin[3], Float:victimOrigin[3], Float:distanceBetween
+	new Float:hulkRadius = get_pcvar_float(gPcvarRadius)
+	new Float:hulkStunTime = get_pcvar_float(gPcvarStunTime)
+	new Float:hulkStunSpeed = get_pcvar_float(gPcvarStunSpeed)
+	new CsTeams:idTeam = cs_get_user_team(id)
 
-		new Float:cooldown = get_pcvar_float(gPcvarCooldown)
-		if ( cooldown > 0.0 ) sh_set_cooldown(id, cooldown)
+	new Float:cooldown = get_pcvar_float(gPcvarCooldown)
+	if ( cooldown > 0.0 ) sh_set_cooldown(id, cooldown)
 
-		pev(id, pev_origin, userOrigin)
+	pev(id, pev_origin, userOrigin)
 
-		new players[SH_MAXSLOTS]
-		new playerCount, player
-		get_players(players, playerCount, "ah")
+	new players[SH_MAXSLOTS]
+	new playerCount, player
+	get_players(players, playerCount, "ah")
 
-		for ( new i = 0; i < playerCount; i++ ) {
-			player = players[i]
+	for ( new i = 0; i < playerCount; i++ ) {
+		player = players[i]
 
-			if ( player == id || idTeam != cs_get_user_team(player) ) {
-				pev(player, pev_origin, victimOrigin)
+		if ( player == id || idTeam != cs_get_user_team(player) ) {
+			pev(player, pev_origin, victimOrigin)
 
-				distanceBetween = get_distance_f(userOrigin, victimOrigin)
+			distanceBetween = get_distance_f(userOrigin, victimOrigin)
 
-				if ( distanceBetween < hulkRadius ) {
-					sh_set_stun(player, hulkStunTime, hulkStunSpeed)
-					sh_screen_shake(player, 4.0, (hulkStunTime + 1.0), 8.0)
-				}
+			if ( distanceBetween < hulkRadius ) {
+				sh_set_stun(player, hulkStunTime, hulkStunSpeed)
+				sh_screen_shake(player, 4.0, (hulkStunTime + 1.0), 8.0)
 			}
 		}
+	}
 
-		// Dependent on the hulkStunTime - Set some Stomp Sounds
-		new count = 0, parm[2]
-		parm[0] = id
-		for ( new i = 0; i < 2 * hulkStunTime; i++ ) {
-			parm[1] = count++
-			if ( count >= gHulkSoundCount ) count = 0
-			set_task((i * 1.0) / 2.0, "stomp_sound", id, parm, 2)
-		}
+	// Dependent on the hulkStunTime - Set some Stomp Sounds
+	new count = 0, parm[2]
+	parm[0] = id
+	for ( new i = 0; i < 2 * hulkStunTime; i++ ) {
+		parm[1] = count++
+		if ( count >= gHulkSoundCount ) count = 0
+		set_task((i * 1.0) / 2.0, "stomp_sound", id, parm, 2)
 	}
 }
 //----------------------------------------------------------------------------------------------

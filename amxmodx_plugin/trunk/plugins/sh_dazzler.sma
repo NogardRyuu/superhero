@@ -60,62 +60,59 @@ public sh_client_spawn(id)
 //----------------------------------------------------------------------------------------------
 public sh_hero_key(id, heroID, key)
 {
-	if ( gHeroID != heroID || sh_is_freezetime() ) return
+	if ( gHeroID != heroID || key != SH_KEYDOWN || sh_is_freezetime() ) return
 	if ( !is_user_alive(id) || !gHasDazzler[id] ) return
 
-	if ( key == SH_KEYDOWN ) {
+	// Let them know they already used their ultimate if they have
+	if ( gPlayerInCooldown[id] ) {
+		sh_sound_deny(id)
+		return
+	}
 
-		// Let them know they already used their ultimate if they have
-		if ( gPlayerInCooldown[id] ) {
-			sh_sound_deny(id)
-			return
-		}
+	new Float:idLevelPct = float(sh_get_user_lvl(id)) / float(sh_get_num_lvls())
 
-		new Float:idLevelPct = float(sh_get_user_lvl(id)) / float(sh_get_num_lvls())
+	new num = floatround(1.0 + (8.0 * idLevelPct))
+	new life = floatround(1.0 + (8.0 * idLevelPct))
+	new size = floatround(50.0 + (150.0 * idLevelPct))
 
-		new num = floatround(1.0 + (8.0 * idLevelPct))
-		new life = floatround(1.0 + (8.0 * idLevelPct))
-		new size = floatround(50.0 + (150.0 * idLevelPct))
+	// just checks to see if this may be causing server crashes...
+	life = clamp(life, 1, 10)
+	size = clamp(size, 50, 200)
 
-		// just checks to see if this may be causing server crashes...
-		life = clamp(life, 1, 10)
-		size = clamp(size, 50, 200)
+	// OK Power dazzle enemies closer than x distance
+	new players[SH_MAXSLOTS], playerCount, player
+	new fromOrigin[3], toOrigin[3], distanceBetween
+	new dazzlerRadius = get_pcvar_num(gPcvarRadius)
+	new CsTeams:idTeam = cs_get_user_team(id)
+	new count = 0
 
-		// OK Power dazzle enemies closer than x distance
-		new players[SH_MAXSLOTS], playerCount, player
-		new fromOrigin[3], toOrigin[3], distanceBetween
-		new dazzlerRadius = get_pcvar_num(gPcvarRadius)
-		new CsTeams:idTeam = cs_get_user_team(id)
-		new count = 0
+	get_user_origin(id, fromOrigin)
 
-		get_user_origin(id, fromOrigin)
+	get_players(players, playerCount, "ah")
 
-		get_players(players, playerCount, "ah")
+	for ( new i = 0; i < playerCount; i++ ) {
+		player = players[i]
 
-		for ( new i = 0; i < playerCount; i++ ) {
-			player = players[i]
+		if ( idTeam != cs_get_user_team(player) ) {
+			get_user_origin(player, toOrigin)
+			distanceBetween = get_distance(fromOrigin, toOrigin)
 
-			if ( idTeam != cs_get_user_team(player) ) {
-				get_user_origin(player, toOrigin)
-				distanceBetween = get_distance(fromOrigin, toOrigin)
+			if ( distanceBetween < dazzlerRadius ) {
+				// tracer fireworks
+				dazzler_sprite_flash(toOrigin, toOrigin, num, life, size, 10)
+				dazzler_sprite_flash(fromOrigin, toOrigin, 10, 5, 10, 1000)
 
-				if ( distanceBetween < dazzlerRadius ) {
-					// tracer fireworks
-					dazzler_sprite_flash(toOrigin, toOrigin, num, life, size, 10)
-					dazzler_sprite_flash(fromOrigin, toOrigin, 10, 5, 10, 1000)
+				emit_sound(id, CHAN_STATIC, gSoundFlash, VOL_NORM, ATTN_NORM, 0, PITCH_HIGH)
+				emit_sound(player, CHAN_STATIC, gSoundFlash, VOL_NORM, ATTN_NORM, 0, PITCH_HIGH)
 
-					emit_sound(id, CHAN_STATIC, gSoundFlash, VOL_NORM, ATTN_NORM, 0, PITCH_HIGH)
-					emit_sound(player, CHAN_STATIC, gSoundFlash, VOL_NORM, ATTN_NORM, 0, PITCH_HIGH)
-
-					count++
-				}
+				count++
 			}
 		}
+	}
 
-		if ( count > 0 ) {
-			new Float:cooldown = get_pcvar_float(gPcvarCooldown)
-			if ( cooldown > 0.0 ) sh_set_cooldown(id, cooldown)
-		}
+	if ( count > 0 ) {
+		new Float:cooldown = get_pcvar_float(gPcvarCooldown)
+		if ( cooldown > 0.0 ) sh_set_cooldown(id, cooldown)
 	}
 }
 //----------------------------------------------------------------------------------------------

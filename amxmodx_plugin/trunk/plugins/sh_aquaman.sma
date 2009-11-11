@@ -79,118 +79,116 @@ public under_the_sea()
 //----------------------------------------------------------------------------------------------
 public sh_hero_key(id, heroID, key)
 {
-	if ( gHeroID != heroID || sh_is_freezetime() ) return
+	if ( gHeroID != heroID || key != SH_KEYDOWN || sh_is_freezetime() ) return
 	if ( !is_user_alive(id) || !gHasAquaman[id] ) return
 
-	if ( key == SH_KEYDOWN ) {
-		if ( pev(id, pev_waterlevel) != 3 ) {
-			sh_chat_message(id, gHeroID, "You must be underwater to use the Bubble Attack")
+	if ( pev(id, pev_waterlevel) != 3 ) {
+		sh_chat_message(id, gHeroID, "You must be underwater to use the Bubble Attack")
+		sh_sound_deny(id)
+		return
+	}
+
+	new armorCost = get_pcvar_num(gPcvarArmorCost)
+
+	// Does it cost to use Bubble Attack?
+	if ( armorCost > 0 ) {
+		new CsArmorType:armorType
+		new userArmor = cs_get_user_armor(id, armorType)
+
+		if ( userArmor < armorCost ) {
+			sh_chat_message(id, gHeroID, "Bubble Attacks cost %d armor point%s each", armorCost, armorCost == 1 ? "" : "s")
 			sh_sound_deny(id)
 			return
 		}
 
-		new armorCost = get_pcvar_num(gPcvarArmorCost)
-
-		// Does it cost to use Bubble Attack?
-		if ( armorCost > 0 ) {
-			new CsArmorType:armorType
-			new userArmor = cs_get_user_armor(id, armorType)
-
-			if ( userArmor < armorCost ) {
-				sh_chat_message(id, gHeroID, "Bubble Attacks cost %d armor point%s each", armorCost, armorCost == 1 ? "" : "s")
-				sh_sound_deny(id)
-				return
-			}
-
-			cs_set_user_armor(id, (userArmor - armorCost), armorType)
-		}
-
-		emit_sound(id, CHAN_WEAPON, gSoundBubbleShot, VOL_NORM, ATTN_NORM, 0, PITCH_NORM)
-
-		// Ludwigs flame thrower
-		new vec[3], aimvec[3]
-		get_user_origin(id, vec)
-		get_user_origin(id, aimvec, 2)
-
-		new dist = get_distance(vec, aimvec)
-		new speed = 10
-		new speed1 = 160
-		new speed2 = 350
-		new radius = 105
-
-		switch(dist)
-		{
-			case 0..49: {
-				radius = 0
-				speed = 5
-			}
-			case 50..149: {
-				speed1 = speed2 = 1
-				speed = 5
-				radius = 50
-			}
-			case 150..199: {
-				speed1 = speed2 = 1
-				speed = 5
-				radius = 90
-			}
-			case 200..249: {
-				speed1 = speed2 = 90
-				speed = 6
-				radius = 90
-			}
-			case 250..299: {
-				speed1 = speed2 = 140
-				speed = 7
-			}
-			case 300..349: {
-				speed1 = speed2 = 190
-				speed = 7
-			}
-			case 350..399: {
-				speed1 = 150
-				speed2 = 240
-				speed = 8
-			}
-			case 400..449: {
-				speed1 = 150
-				speed2 = 290
-				speed = 8
-			}
-			case 450..499: {
-				speed1 = 180
-				speed2 = 340
-				speed = 9
-			}
-		}
-
-		new vecdif[3], velocityvec[3], length
-
-		vecdif[0] = aimvec[0]-vec[0]
-		vecdif[1] = aimvec[1]-vec[1]
-		vecdif[2] = aimvec[2]-vec[2]
-
-		length = sqroot(vecdif[0]*vecdif[0] + vecdif[1]*vecdif[1] + vecdif[2]*vecdif[2])
-
-		// Make sure 0 is not returned so we don't devide by it
-		if ( length == 0 ) length++
-
-		velocityvec[0] = vecdif[0]*speed/length
-		velocityvec[1] = vecdif[1]*speed/length
-		velocityvec[2] = vecdif[2]*speed/length
-
-		new args[6]
-		args[0] = vec[0]
-		args[1] = vec[1]
-		args[2] = vec[2]
-		args[3] = velocityvec[0]
-		args[4] = velocityvec[1]
-		args[5] = velocityvec[2]
-
-		set_task(0.1, "te_spray", _, args, 6, "a", 4)
-
-		check_bubblezone(id, vec, vecdif, length, speed1, speed2, radius)
+		cs_set_user_armor(id, (userArmor - armorCost), armorType)
 	}
+
+	emit_sound(id, CHAN_WEAPON, gSoundBubbleShot, VOL_NORM, ATTN_NORM, 0, PITCH_NORM)
+
+	// Ludwigs flame thrower
+	new vec[3], aimvec[3]
+	get_user_origin(id, vec)
+	get_user_origin(id, aimvec, 2)
+
+	new dist = get_distance(vec, aimvec)
+	new speed = 10
+	new speed1 = 160
+	new speed2 = 350
+	new radius = 105
+
+	switch(dist)
+	{
+		case 0..49: {
+			radius = 0
+			speed = 5
+		}
+		case 50..149: {
+			speed1 = speed2 = 1
+			speed = 5
+			radius = 50
+		}
+		case 150..199: {
+			speed1 = speed2 = 1
+			speed = 5
+			radius = 90
+		}
+		case 200..249: {
+			speed1 = speed2 = 90
+			speed = 6
+			radius = 90
+		}
+		case 250..299: {
+			speed1 = speed2 = 140
+			speed = 7
+		}
+		case 300..349: {
+			speed1 = speed2 = 190
+			speed = 7
+		}
+		case 350..399: {
+			speed1 = 150
+			speed2 = 240
+			speed = 8
+		}
+		case 400..449: {
+			speed1 = 150
+			speed2 = 290
+			speed = 8
+		}
+		case 450..499: {
+			speed1 = 180
+			speed2 = 340
+			speed = 9
+		}
+	}
+
+	new vecdif[3], velocityvec[3], length
+
+	vecdif[0] = aimvec[0]-vec[0]
+	vecdif[1] = aimvec[1]-vec[1]
+	vecdif[2] = aimvec[2]-vec[2]
+
+	length = sqroot(vecdif[0]*vecdif[0] + vecdif[1]*vecdif[1] + vecdif[2]*vecdif[2])
+
+	// Make sure 0 is not returned so we don't devide by it
+	if ( length == 0 ) length++
+
+	velocityvec[0] = vecdif[0]*speed/length
+	velocityvec[1] = vecdif[1]*speed/length
+	velocityvec[2] = vecdif[2]*speed/length
+
+	new args[6]
+	args[0] = vec[0]
+	args[1] = vec[1]
+	args[2] = vec[2]
+	args[3] = velocityvec[0]
+	args[4] = velocityvec[1]
+	args[5] = velocityvec[2]
+
+	set_task(0.1, "te_spray", _, args, 6, "a", 4)
+
+	check_bubblezone(id, vec, vecdif, length, speed1, speed2, radius)
 }
 //----------------------------------------------------------------------------------------------
 public te_spray(args[])

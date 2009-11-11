@@ -70,19 +70,17 @@ public sh_client_spawn(id)
 //----------------------------------------------------------------------------------------------
 public sh_hero_key(id, heroID, key)
 {
-	if ( gHeroID != heroID || sh_is_freezetime() ) return
+	if ( gHeroID != heroID || key != SH_KEYDOWN || sh_is_freezetime() ) return
 	if ( !is_user_alive(id) || !gHasKamikaze[id] ) return
 
-	if ( key == SH_KEYDOWN ) {
-		// Let them know they already used their ultimate if they have
-		if ( gPlayerInCooldown[id] ) {
-			sh_sound_deny(id)
-			return
-		}
-
-		gPlayerInCooldown[id] = true
-		gFuseTime[id] = get_pcvar_num(pCvarFuse)
+	// Let them know they already used their ultimate if they have
+	if ( gPlayerInCooldown[id] ) {
+		sh_sound_deny(id)
+		return
 	}
+
+	gPlayerInCooldown[id] = true
+	gFuseTime[id] = get_pcvar_num(pCvarFuse)
 }
 //----------------------------------------------------------------------------------------------
 public kamikaze_check()

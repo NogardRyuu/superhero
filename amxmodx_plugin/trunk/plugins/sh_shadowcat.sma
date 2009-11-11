@@ -82,33 +82,31 @@ public sh_client_spawn(id)
 //----------------------------------------------------------------------------------------------
 public sh_hero_key(id, heroID, key)
 {
-	if ( gHeroID != heroID || sh_is_freezetime() || !is_user_alive(id) ) return
+	if ( gHeroID != heroID || key != SH_KEYDOWN || sh_is_freezetime() || !is_user_alive(id) ) return
 
-	if ( key == SH_KEYDOWN ) {
-		// Make sure they're not in the middle of clip already
-		// Let them know they already used their ultimate if they have
-		if ( gPlayerInCooldown[id] || gShadowcatTimer[id] >= 0 ) {
-			sh_sound_deny(id)
-			return
-		}
-
-		//If the user already has noclip (prob from another hero) cancel this keydown
-		if ( get_user_noclip(id) ) {
-			sh_chat_message(id, gHeroID, "You are already using noclip")
-			sh_sound_deny(id)
-			return
-		}
-
-		gShadowcatTimer[id] = get_pcvar_num(gPcvarClipTime)
-
-		set_user_noclip(id, 1)
-
-		// Shadowcat Messsage
-		set_hudmessage(255, 0, 0, -1.0, 0.3, 0, 0.25, 1.2, 0.0, 0.0, -1)
-		ShowSyncHudMsg(id, gMsgSync, "Entered %s Mode^nDon't get Stuck or you will die", gHeroName)
-
-		emit_sound(id, CHAN_STATIC, gSoundShadowcat, 0.2, ATTN_NORM, 0, PITCH_LOW)
+	// Make sure they're not in the middle of clip already
+	// Let them know they already used their ultimate if they have
+	if ( gPlayerInCooldown[id] || gShadowcatTimer[id] >= 0 ) {
+		sh_sound_deny(id)
+		return
 	}
+
+	//If the user already has noclip (prob from another hero) cancel this keydown
+	if ( get_user_noclip(id) ) {
+		sh_chat_message(id, gHeroID, "You are already using noclip")
+		sh_sound_deny(id)
+		return
+	}
+
+	gShadowcatTimer[id] = get_pcvar_num(gPcvarClipTime)
+
+	set_user_noclip(id, 1)
+
+	// Shadowcat Messsage
+	set_hudmessage(255, 0, 0, -1.0, 0.3, 0, 0.25, 1.2, 0.0, 0.0, -1)
+	ShowSyncHudMsg(id, gMsgSync, "Entered %s Mode^nDon't get Stuck or you will die", gHeroName)
+
+	emit_sound(id, CHAN_STATIC, gSoundShadowcat, 0.2, ATTN_NORM, 0, PITCH_LOW)
 }
 //----------------------------------------------------------------------------------------------
 public shadowcat_loop()

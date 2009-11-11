@@ -122,16 +122,14 @@ bomberman_newsetup(id)
 // RESPOND TO KEYDOWN
 public sh_hero_key(id, heroID, key)
 {
-	if ( gHeroID != heroID || sh_is_freezetime() ) return
+	if ( gHeroID != heroID || key != SH_KEYDOWN || sh_is_freezetime() ) return
 	if ( !is_user_alive(id) || !gHasBomberman[id] ) return
 
-	if ( key == SH_KEYDOWN ) {
-		if ( gBombEntity[id] > 0 ) {
-			explode_bomb(id)
-		}
-		else {
-			plant_bomb(id)
-		}
+	if ( gBombEntity[id] > 0 ) {
+		explode_bomb(id)
+	}
+	else {
+		plant_bomb(id)
 	}
 }
 //----------------------------------------------------------------------------------------------
