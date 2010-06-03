@@ -52,6 +52,8 @@
 *
 *  v1.2.1 - vittu - ??/??/??
 *	- 
+*	- Fixed bug with sh_minplayersxp being checked incorrectly.
+*	- Fixed issue with short term XP in superhero.ini not being usable because gLongTermXP was being set too late, issue was caused by fix for amb1961.
 *	- Changed SH_ARMOR_RATIO to 0.5 since in cs armor seems to reduce damage by 50% not 80%
 *	- Added native sh_set_hero_dmgmult for weapon multipliers to directly hook damage instead of faking damage with sh_extra_damage
 *	- Added removal of all Monster Mod monsters on new round, stops monster freezetime attacks
@@ -336,6 +338,7 @@
 *
 *  To-Do:
 *
+*	- Add option to show XP on kill
 *	- Admin menu for giving XP / levels / etc. Also for resetting and other admin commands. (separate plugin).
 *	- Config file to make heroes only available to certain access flags.
 *	- Create a Block weapon fire/sound/animation for laser type heroes instead of having them switch to knife.
@@ -2200,7 +2203,7 @@ public ham_PlayerSpawn_Post(id)
 	if ( gGiveMercyXP && !gReadXPNextRound[id] && !gBlockMercyXp[id] ) {
 		new mercyxpmode = get_pcvar_num(sh_mercyxpmode)
 
-		if ( mercyxpmode != 0 && gPlayerStartXP[id] >= gPlayerXP[id] && get_playersnum() > get_pcvar_num(sh_minplrsbhxp) ) {
+		if ( mercyxpmode != 0 && gPlayerStartXP[id] >= gPlayerXP[id] && get_playersnum() >= get_pcvar_num(sh_minplrsbhxp) ) {
 			new XPtoGive = 0
 			new mercyxp = get_pcvar_num(sh_mercyxp)
 
@@ -4588,7 +4591,7 @@ public vip_UserEscape()
 	if ( !is_user_connected(id) ) return
 	if ( id != gXpBounsVIP ) return
 	if ( cs_get_user_team(id) != CS_TEAM_CT ) return
-	if ( get_playersnum() <= get_pcvar_num(sh_minplrsbhxp) ) return
+	if ( get_playersnum() < get_pcvar_num(sh_minplrsbhxp) ) return
 
 	new XPtoGive = get_pcvar_num(sh_objectivexp)
 	localAddXP(id, XPtoGive)
@@ -4604,7 +4607,7 @@ public vip_Assassinated()
 
 	if ( !is_user_connected(attacker) ) return
 	if ( cs_get_user_team(attacker) != CS_TEAM_T ) return
-	if ( get_playersnum() <= get_pcvar_num(sh_minplrsbhxp) ) return
+	if ( get_playersnum() < get_pcvar_num(sh_minplrsbhxp) ) return
 
 	new XPtoGive = get_pcvar_num(sh_objectivexp)
 	localAddXP(attacker, XPtoGive)
@@ -4615,7 +4618,7 @@ public vip_Assassinated()
 public vip_Escaped()
 {
 	if ( !get_pcvar_num(sv_superheros) || !gObjectiveXP ) return
-	if ( get_playersnum() <= get_pcvar_num(sh_minplrsbhxp) ) return
+	if ( get_playersnum() < get_pcvar_num(sh_minplrsbhxp) ) return
 
 	new players[32], numplayers, ct
 	new XPtoGive = get_pcvar_num(sh_objectivexp)
@@ -4669,7 +4672,7 @@ public host_Rescued()
 public host_AllRescued()
 {
 	if ( !get_pcvar_num(sv_superheros) || !gObjectiveXP ) return
-	if ( get_playersnum() <= get_pcvar_num(sh_minplrsbhxp) ) return
+	if ( get_playersnum() < get_pcvar_num(sh_minplrsbhxp) ) return
 
 	new players[32], numplayers, ct
 	new XPtoGive = get_pcvar_num(sh_objectivexp)
@@ -4708,7 +4711,7 @@ public bomb_planted(planter)
 	if ( !is_user_connected(planter) || !pev_valid(gXpBounsC4ID) ) return
 	if ( planter != pev(gXpBounsC4ID, pev_owner) ) return
 	if ( cs_get_user_team(planter) != CS_TEAM_T ) return
-	if ( get_playersnum() <= get_pcvar_num(sh_minplrsbhxp) ) return
+	if ( get_playersnum() < get_pcvar_num(sh_minplrsbhxp) ) return
 
 	// Only give this out once per round
 	gXpBounsC4ID = -1
@@ -4725,7 +4728,7 @@ public bomb_defused(defuser)
 	if ( !get_pcvar_num(sv_superheros) || !gObjectiveXP ) return
 	if ( !is_user_connected(defuser) ) return
 	if ( cs_get_user_team(defuser) != CS_TEAM_CT ) return
-	if ( get_playersnum() <= get_pcvar_num(sh_minplrsbhxp) ) return
+	if ( get_playersnum() < get_pcvar_num(sh_minplrsbhxp) ) return
 
 	new XPtoGive = get_pcvar_num(sh_objectivexp)
 	localAddXP(defuser, XPtoGive)
@@ -4736,7 +4739,7 @@ public bomb_defused(defuser)
 public bomb_explode(planter, defuser)
 {
 	if ( !get_pcvar_num(sv_superheros) || !gObjectiveXP ) return PLUGIN_CONTINUE
-	if ( get_playersnum() <= get_pcvar_num(sh_minplrsbhxp) ) return PLUGIN_CONTINUE
+	if ( get_playersnum() < get_pcvar_num(sh_minplrsbhxp) ) return PLUGIN_CONTINUE
 
 	new players[32], numplayers, terrorist
 	new XPtoGive = get_pcvar_num(sh_objectivexp)
@@ -5078,6 +5081,9 @@ readINI()
 		debugMsg(0, 0, "Failed to open superhero.ini, please verify file/folder permissions")
 		return
 	}
+
+	//Config setup gets called too late, lets just check this now
+	gLongTermXP = get_pcvar_num(sh_savexp) ? true : false
 
 	// Only called once no need for static
 	new data[1501], tag[20]
